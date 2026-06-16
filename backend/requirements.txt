@@ -1,0 +1,7 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+httpx>=0.27
+# data providers
+yfinance>=0.2.40   # default no-key provider
+requests>=2.31     # used by the finnhub provider

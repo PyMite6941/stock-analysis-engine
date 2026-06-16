@@ -1,0 +1,5 @@
+streamlit>=1.36
+pandas>=2.2
+# shared core data providers
+yfinance>=0.2.40
+requests>=2.31
