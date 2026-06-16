@@ -88,7 +88,15 @@ def _parse_symbols(symbols: str) -> list[str]:
 # ---------------------------------------------------------------------------
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "data_provider": data.get_provider().name}
+    # Report the configured provider from env WITHOUT instantiating it — so this
+    # never 500s just because the provider's deps/keys aren't present yet.
+    import os
+    return {
+        "status": "ok",
+        "data_provider": os.environ.get("DATA_PROVIDER", "yfinance"),
+        "ai_configured": bool(os.environ.get("GROQ_API_KEY")
+                              or os.environ.get("OPENROUTER_API_KEY")),
+    }
 
 
 @app.get("/api/quotes")

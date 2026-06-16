@@ -11,3 +11,5 @@ frontend/dist/
 
 # misc
 .DS_Store
+
+.vercel
