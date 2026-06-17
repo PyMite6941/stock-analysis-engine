@@ -115,6 +115,12 @@ def fundamentals(symbol: str):
     return data.get_fundamentals(symbol).to_dict()
 
 
+@app.get("/api/statistics")
+def statistics(symbol: str):
+    """Valuation, financial highlights, analyst insights, and quarterly earnings."""
+    return data.get_statistics(symbol)
+
+
 @app.get("/api/candles")
 def candles(symbol: str, period: str = "6mo", interval: str = "1d"):
     """Full OHLCV + the standard indicator set, aligned to the same date axis.

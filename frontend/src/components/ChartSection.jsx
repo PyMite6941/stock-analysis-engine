@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { candles as fetchCandles } from "../api.js";
 import CandleChart from "./CandleChart.jsx";
 import ComparisonChart from "./ComparisonChart.jsx";
+import StatsCompare from "./StatsCompare.jsx";
 
 // label -> [period, interval]. 1D/5D use fine intraday bars for Yahoo-like density.
 const TIMEFRAMES = [
@@ -109,7 +110,10 @@ export default function ChartSection({ symbol, onSymbolChange, symbols }) {
       </div>
 
       {compare ? (
-        <ComparisonChart symbols={symbols} period={period} interval={interval} />
+        <>
+          <ComparisonChart symbols={symbols} period={period} interval={interval} />
+          <StatsCompare symbols={symbols} />
+        </>
       ) : (
         <>
           <div className="indicator-toggles">

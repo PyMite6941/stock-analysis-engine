@@ -152,6 +152,39 @@ header .sub { color: var(--muted); margin: 4px 0 20px; }
 .fund-summary p { color: var(--text); font-size: 0.9rem; line-height: 1.55; margin: 10px 0 0; }
 .fund-loading { padding: 16px; }
 
+/* statistics panel */
+.stats-panel h2 { font-size: 1.15rem; margin: 0 0 12px; }
+.stats-h { font-size: 0.95rem; margin: 18px 0 8px; color: var(--text);
+  display: flex; align-items: center; gap: 12px; }
+.legend-inline { font-size: 0.78rem; color: var(--muted); font-weight: 400; display: inline-flex; gap: 6px; align-items: center; }
+.dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.dot.rev { background: #42a5f5; } .dot.earn { background: #26a69a; }
+
+/* analyst target gauge */
+.target-wrap { margin: 6px 0 4px; }
+.target-bar { position: relative; height: 8px; border-radius: 999px;
+  background: linear-gradient(90deg, #ef5350, #f0b90b, #26a69a); }
+.target-mark { position: absolute; top: -3px; width: 3px; height: 14px; transform: translateX(-1px); }
+.target-mark.cur { background: #fff; }
+.target-mark.avg { background: #0d1117; border-left: 1px solid #fff; border-right: 1px solid #fff; }
+.target-ends { display: flex; justify-content: space-between; font-size: 0.78rem;
+  color: var(--text); margin-top: 6px; }
+
+/* revenue vs earnings bars */
+.revearn { display: flex; gap: 16px; align-items: flex-end; height: 150px; padding: 8px 4px 0; }
+.re-col { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; height: 100%; }
+.re-bars { display: flex; gap: 5px; align-items: flex-end; height: 120px; }
+.re-bar { width: 18px; border-radius: 3px 3px 0 0; min-height: 2px; }
+.re-bar.rev { background: #42a5f5; } .re-bar.earn { background: #26a69a; }
+.re-label { font-size: 0.72rem; color: var(--muted); }
+
+/* side-by-side compare table */
+.stats-compare { margin-top: 18px; }
+.compare-table th, .compare-table td { text-align: right; }
+.compare-table .metric-col { text-align: left; color: var(--muted); }
+.compare-table .group-row td { text-align: left; color: var(--accent);
+  font-weight: 600; font-size: 0.8rem; padding-top: 12px; border-bottom: none; }
+
 /* chat */
 .chat { margin-top: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
 .chat-head { display: flex; justify-content: space-between; align-items: baseline; }

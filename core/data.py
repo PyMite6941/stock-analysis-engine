@@ -193,6 +193,74 @@ class YFinanceProvider:
         "1d": ("1d", None), "1wk": ("1wk", None), "1mo": ("1mo", None),
     }
 
+    def statistics(self, symbol: str) -> dict:
+        t = self._yf.Ticker(symbol)
+        try:
+            info = t.info
+        except Exception:
+            info = {}
+
+        # Quarterly revenue vs. earnings (last 4 quarters, oldest -> newest).
+        quarterly = []
+        try:
+            q = getattr(t, "quarterly_income_stmt", None)
+            if q is None or q.empty:
+                q = getattr(t, "quarterly_financials", None)
+            if q is not None and not q.empty:
+                rev = q.loc["Total Revenue"] if "Total Revenue" in q.index else None
+                ni = q.loc["Net Income"] if "Net Income" in q.index else None
+                for c in list(q.columns)[:4][::-1]:
+                    quarterly.append({
+                        "quarter": c.strftime("%b %Y") if hasattr(c, "strftime") else str(c),
+                        "revenue": _safe_float(rev[c]) if rev is not None else None,
+                        "earnings": _safe_float(ni[c]) if ni is not None else None,
+                    })
+        except Exception:
+            pass
+
+        pct = lambda v: round(v * 100, 2) if v is not None else None  # noqa: E731
+        return {
+            "symbol": symbol.upper(),
+            "name": info.get("shortName") or info.get("longName") or symbol.upper(),
+            "currency": info.get("currency", "USD"),
+            "valuation": {
+                "market_cap": _safe_float(info.get("marketCap")),
+                "enterprise_value": _safe_float(info.get("enterpriseValue")),
+                "trailing_pe": _safe_float(info.get("trailingPE")),
+                "forward_pe": _safe_float(info.get("forwardPE")),
+                "peg": _safe_float(info.get("trailingPegRatio") or info.get("pegRatio")),
+                "price_to_sales": _safe_float(info.get("priceToSalesTrailing12Months")),
+                "price_to_book": _safe_float(info.get("priceToBook")),
+                "ev_to_revenue": _safe_float(info.get("enterpriseToRevenue")),
+                "ev_to_ebitda": _safe_float(info.get("enterpriseToEbitda")),
+            },
+            "financials": {
+                "profit_margin": pct(_safe_float(info.get("profitMargins"))),
+                "roa": pct(_safe_float(info.get("returnOnAssets"))),
+                "roe": pct(_safe_float(info.get("returnOnEquity"))),
+                "revenue_ttm": _safe_float(info.get("totalRevenue")),
+                "net_income": _safe_float(info.get("netIncomeToCommon")),
+                "diluted_eps": _safe_float(info.get("trailingEps")),
+                "total_cash": _safe_float(info.get("totalCash")),
+                "debt_to_equity": _safe_float(info.get("debtToEquity")),
+                "levered_fcf": _safe_float(info.get("freeCashflow")),
+            },
+            "analyst": {
+                "current_price": _safe_float(info.get("currentPrice")),
+                "target_low": _safe_float(info.get("targetLowPrice")),
+                "target_mean": _safe_float(info.get("targetMeanPrice")),
+                "target_high": _safe_float(info.get("targetHighPrice")),
+                "recommendation_key": info.get("recommendationKey"),
+                "recommendation_mean": _safe_float(info.get("recommendationMean")),
+                "num_analysts": _safe_int(info.get("numberOfAnalystOpinions")),
+            },
+            "earnings": {
+                "forward_eps": _safe_float(info.get("forwardEps")),
+                "trailing_eps": _safe_float(info.get("trailingEps")),
+                "quarterly": quarterly,
+            },
+        }
+
     def candles(self, symbol: str, period: str = "6mo",
                 interval: str = "1d") -> Candles:
         native, resample = self._YF_INTERVAL.get(interval, ("1d", None))
@@ -288,6 +356,50 @@ class FinnhubProvider:
             target_mean_price=None,
         )
 
+    def statistics(self, symbol: str) -> dict:
+        # Best-effort from the free Finnhub metric endpoint; quarterly series and
+        # some fields aren't available on the free tier.
+        sym = symbol.upper()
+        m = self._get("/stock/metric", symbol=sym, metric="all").get("metric", {})
+        profile = self._get("/stock/profile2", symbol=sym)
+        return {
+            "symbol": sym,
+            "name": profile.get("name", sym),
+            "currency": profile.get("currency", "USD"),
+            "valuation": {
+                "market_cap": _safe_float(profile.get("marketCapitalization"), scale=1_000_000),
+                "enterprise_value": None,
+                "trailing_pe": _safe_float(m.get("peTTM")),
+                "forward_pe": _safe_float(m.get("forwardPE")),
+                "peg": _safe_float(m.get("pegRatioTTM")),
+                "price_to_sales": _safe_float(m.get("psTTM")),
+                "price_to_book": _safe_float(m.get("pbAnnual")),
+                "ev_to_revenue": _safe_float(m.get("currentEv/freeCashFlowTTM")),
+                "ev_to_ebitda": _safe_float(m.get("currentEv/ebitdaTTM")),
+            },
+            "financials": {
+                "profit_margin": _safe_float(m.get("netProfitMarginTTM")),
+                "roa": _safe_float(m.get("roaTTM")),
+                "roe": _safe_float(m.get("roeTTM")),
+                "revenue_ttm": None,
+                "net_income": None,
+                "diluted_eps": _safe_float(m.get("epsTTM")),
+                "total_cash": None,
+                "debt_to_equity": _safe_float(m.get("totalDebt/totalEquityAnnual")),
+                "levered_fcf": None,
+            },
+            "analyst": {
+                "current_price": None, "target_low": None, "target_mean": None,
+                "target_high": None, "recommendation_key": None,
+                "recommendation_mean": None, "num_analysts": None,
+            },
+            "earnings": {
+                "forward_eps": None,
+                "trailing_eps": _safe_float(m.get("epsTTM")),
+                "quarterly": [],
+            },
+        }
+
     _RESOLUTION = {"1d": "D", "1wk": "W", "1mo": "M", "3h": "60", "1h": "60",
                    "30m": "30", "15m": "15", "5m": "5", "2m": "1", "1m": "1"}
 
@@ -346,6 +458,10 @@ def get_candles(symbol: str, period: str = "6mo", interval: str = "1d") -> Candl
 
 def get_fundamentals(symbol: str) -> Fundamentals:
     return get_provider().fundamentals(symbol)
+
+
+def get_statistics(symbol: str) -> dict:
+    return get_provider().statistics(symbol)
 
 
 def get_history(symbol: str, period: str = "6mo") -> History:
