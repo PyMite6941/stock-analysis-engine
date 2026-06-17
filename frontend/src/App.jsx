@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { analyze, downloadCsvUrl } from "./api.js";
 import QuoteTable from "./components/QuoteTable.jsx";
-import PriceChart from "./components/PriceChart.jsx";
+import ChartSection from "./components/ChartSection.jsx";
 import SummaryBar from "./components/SummaryBar.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
 
@@ -13,6 +13,7 @@ export default function App() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [focused, setFocused] = useState(null); // symbol shown in the big chart
 
   const symbols = symbolsInput
     .split(",")
@@ -23,7 +24,9 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      setData(await analyze(symbols, period));
+      const result = await analyze(symbols, period);
+      setData(result);
+      setFocused(symbols[0] ?? null);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -31,11 +34,16 @@ export default function App() {
     }
   }
 
+  // Keep the focused chart symbol valid as the watchlist changes.
+  useEffect(() => {
+    if (data && focused && !symbols.includes(focused)) setFocused(symbols[0] ?? null);
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="app">
       <header>
         <h1>📈 Stock Analysis Engine</h1>
-        <p className="sub">Live data · computed metrics · AI analyst</p>
+        <p className="sub">Candlesticks · indicators · AI analyst — a free, lean charting tool</p>
       </header>
 
       <section className="controls">
@@ -46,17 +54,13 @@ export default function App() {
           onKeyDown={(e) => e.key === "Enter" && runAnalysis()}
         />
         <select value={period} onChange={(e) => setPeriod(e.target.value)}>
-          {PERIODS.map((p) => (
-            <option key={p} value={p}>{p}</option>
-          ))}
+          {PERIODS.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
         <button onClick={runAnalysis} disabled={loading || !symbols.length}>
           {loading ? "Analyzing…" : "Analyze"}
         </button>
         {data && (
-          <a className="download" href={downloadCsvUrl(symbols, period)}>
-            ⬇ Download CSV
-          </a>
+          <a className="download" href={downloadCsvUrl(symbols, period)}>⬇ Download CSV</a>
         )}
       </section>
 
@@ -65,12 +69,15 @@ export default function App() {
       {data && (
         <>
           <SummaryBar summary={data.summary} />
-          <QuoteTable quotes={data.quotes} analyses={data.analyses} />
-          <div className="charts">
-            {Object.entries(data.histories).map(([sym, h]) => (
-              <PriceChart key={sym} symbol={sym} history={h} />
-            ))}
-          </div>
+          {focused && (
+            <ChartSection symbol={focused} onSymbolChange={setFocused} symbols={symbols} />
+          )}
+          <QuoteTable
+            quotes={data.quotes}
+            analyses={data.analyses}
+            focused={focused}
+            onSelect={setFocused}
+          />
           <ChatPanel symbols={symbols} period={period} />
         </>
       )}

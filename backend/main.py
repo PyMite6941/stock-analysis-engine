@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from core import data, metrics
+from core import data, metrics, indicators
 from backend import ai
 
 app = FastAPI(title="Stock Analysis Engine", version="0.1.0")
@@ -107,6 +107,18 @@ def quotes(symbols: str = Query(..., examples=["AAPL,MSFT,NVDA"])):
 @app.get("/api/history")
 def history(symbol: str, period: str = "6mo"):
     return data.get_history(symbol, period).to_dict()
+
+
+@app.get("/api/candles")
+def candles(symbol: str, period: str = "6mo", interval: str = "1d"):
+    """Full OHLCV + the standard indicator set, aligned to the same date axis.
+
+    This is the data source for the main candlestick chart.
+    """
+    c = data.get_candles(symbol, period, interval)
+    out = c.to_dict()
+    out["indicators"] = indicators.compute_all(c.close) if c.close else {}
+    return out
 
 
 @app.post("/api/analyze")

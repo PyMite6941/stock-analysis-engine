@@ -17,6 +17,16 @@ export function analyze(symbols, period = "6mo") {
   return post("/api/analyze", { symbols, period });
 }
 
+export async function candles(symbol, period = "6mo", interval = "1d") {
+  const q = new URLSearchParams({ symbol, period, interval });
+  const r = await fetch(`/api/candles?${q}`);
+  if (!r.ok) {
+    const detail = await r.json().catch(() => ({}));
+    throw new Error(detail.detail || `Request failed (${r.status})`);
+  }
+  return r.json();
+}
+
 export function chat(messages, symbols, period = "6mo") {
   return post("/api/chat", { messages, symbols, period });
 }

@@ -5,4 +5,4 @@ Imported by both the FastAPI backend (online mode) and the Streamlit app
 offline path never depends on a network LLM.
 """
 
-from . import data, metrics  # noqa: F401
+from . import data, metrics, indicators  # noqa: F401

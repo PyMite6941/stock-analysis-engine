@@ -46,6 +46,24 @@ class History:
         return asdict(self)
 
 
+@dataclass
+class Candles:
+    """Full OHLCV series for candlestick charting."""
+    symbol: str
+    dates: list[str]
+    open: list[float]
+    high: list[float]
+    low: list[float]
+    close: list[float]
+    volume: list[float]
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    def to_history(self) -> "History":
+        return History(symbol=self.symbol, dates=self.dates, closes=self.close)
+
+
 # ---------------------------------------------------------------------------
 # Providers
 # ---------------------------------------------------------------------------
@@ -84,13 +102,18 @@ class YFinanceProvider:
             ))
         return out
 
-    def history(self, symbol: str, period: str = "6mo") -> History:
-        hist = self._yf.Ticker(symbol).history(period=period)
-        closes = hist["Close"].dropna()
-        return History(
+    def candles(self, symbol: str, period: str = "6mo",
+                interval: str = "1d") -> Candles:
+        df = self._yf.Ticker(symbol).history(period=period, interval=interval).dropna()
+        return Candles(
             symbol=symbol.upper(),
-            dates=[d.strftime("%Y-%m-%d") for d in closes.index],
-            closes=[round(float(c), 4) for c in closes.values],
+            dates=[d.strftime("%Y-%m-%d %H:%M") if interval.endswith(("m", "h"))
+                   else d.strftime("%Y-%m-%d") for d in df.index],
+            open=[round(float(x), 4) for x in df["Open"].values],
+            high=[round(float(x), 4) for x in df["High"].values],
+            low=[round(float(x), 4) for x in df["Low"].values],
+            close=[round(float(x), 4) for x in df["Close"].values],
+            volume=[float(x) for x in df["Volume"].values],
         )
 
 
@@ -137,18 +160,30 @@ class FinnhubProvider:
             ))
         return out
 
-    def history(self, symbol: str, period: str = "6mo") -> History:
+    _RESOLUTION = {"1d": "D", "1wk": "W", "1mo": "M",
+                   "1h": "60", "15m": "15", "5m": "5"}
+
+    def candles(self, symbol: str, period: str = "6mo",
+                interval: str = "1d") -> Candles:
         days = _period_to_days(period)
+        resolution = self._RESOLUTION.get(interval, "D")
         now = int(datetime.utcnow().timestamp())
         frm = int((datetime.utcnow() - timedelta(days=days)).timestamp())
-        c = self._get("/stock/candle", symbol=symbol.upper(), resolution="D",
+        c = self._get("/stock/candle", symbol=symbol.upper(), resolution=resolution,
                       **{"from": frm, "to": now})
         if c.get("s") != "ok":
-            return History(symbol=symbol.upper(), dates=[], closes=[])
-        dates = [datetime.utcfromtimestamp(t).strftime("%Y-%m-%d") for t in c["t"]]
-        return History(symbol=symbol.upper(),
-                       dates=dates,
-                       closes=[round(float(x), 4) for x in c["c"]])
+            return Candles(symbol.upper(), [], [], [], [], [], [])
+        intraday = interval.endswith(("m", "h"))
+        fmt = "%Y-%m-%d %H:%M" if intraday else "%Y-%m-%d"
+        return Candles(
+            symbol=symbol.upper(),
+            dates=[datetime.utcfromtimestamp(t).strftime(fmt) for t in c["t"]],
+            open=[round(float(x), 4) for x in c["o"]],
+            high=[round(float(x), 4) for x in c["h"]],
+            low=[round(float(x), 4) for x in c["l"]],
+            close=[round(float(x), 4) for x in c["c"]],
+            volume=[float(x) for x in c["v"]],
+        )
 
 
 _PROVIDERS = {
@@ -177,8 +212,13 @@ def get_quotes(symbols: list[str]) -> list[Quote]:
     return get_provider().quotes([s.strip() for s in symbols if s.strip()])
 
 
+def get_candles(symbol: str, period: str = "6mo", interval: str = "1d") -> Candles:
+    return get_provider().candles(symbol, period, interval)
+
+
 def get_history(symbol: str, period: str = "6mo") -> History:
-    return get_provider().history(symbol, period)
+    # Close-only view, derived from the full candle fetch.
+    return get_provider().candles(symbol, period).to_history()
 
 
 # ---------------------------------------------------------------------------

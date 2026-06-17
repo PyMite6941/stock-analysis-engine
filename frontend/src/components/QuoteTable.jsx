@@ -11,10 +11,11 @@ function fmtCap(n) {
   return fmt(n);
 }
 
-export default function QuoteTable({ quotes, analyses }) {
+export default function QuoteTable({ quotes, analyses, focused, onSelect }) {
   const aBySym = Object.fromEntries(analyses.map((a) => [a.symbol, a]));
   return (
     <table className="quote-table">
+      <caption className="table-hint">Click a row to chart it</caption>
       <thead>
         <tr>
           <th>Symbol</th><th>Name</th><th>Price</th><th>Chg %</th>
@@ -27,7 +28,9 @@ export default function QuoteTable({ quotes, analyses }) {
           const a = aBySym[q.symbol] || {};
           const up = q.change_pct >= 0;
           return (
-            <tr key={q.symbol}>
+            <tr key={q.symbol}
+                className={q.symbol === focused ? "row-active" : "row-click"}
+                onClick={() => onSelect && onSelect(q.symbol)}>
               <td className="sym">{q.symbol}</td>
               <td className="name">{q.name}</td>
               <td>{fmt(q.price)}</td>
