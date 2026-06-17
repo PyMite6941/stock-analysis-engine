@@ -123,8 +123,12 @@ class YFinanceProvider:
                 meta = t.info  # heavier; wrapped because it can throw
             except Exception:
                 meta = {}
-            price = info.get("last_price") or meta.get("currentPrice") or 0.0
-            prev = info.get("previous_close") or meta.get("previousClose") or price
+            # Index symbols (^GSPC, ^VIX, …) expose level via regularMarketPrice,
+            # not currentPrice/last_price — so include those in the fallback chain.
+            price = (info.get("last_price") or meta.get("currentPrice")
+                     or meta.get("regularMarketPrice") or meta.get("previousClose") or 0.0)
+            prev = (info.get("previous_close") or meta.get("regularMarketPreviousClose")
+                    or meta.get("previousClose") or price)
             change = (price - prev) if price and prev else 0.0
             change_pct = (change / prev * 100) if prev else 0.0
             out.append(Quote(
