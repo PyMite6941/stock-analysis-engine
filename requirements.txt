@@ -1,7 +1,9 @@
 # Dependencies for the Vercel @vercel/python serverless function (api/index.py).
-# Deliberately lean: no uvicorn (Vercel provides the server), no yfinance
-# (use DATA_PROVIDER=finnhub in production — yfinance is flaky from cloud IPs).
+# No uvicorn (Vercel provides the server). yfinance is included so live data works
+# with no API key; if Yahoo throttles the cloud IP, set DATA_PROVIDER=finnhub +
+# FINNHUB_API_KEY in the Vercel env (requests handles that path).
 fastapi>=0.115
 pydantic>=2.7
 httpx>=0.27
 requests>=2.31
+yfinance>=0.2.40
