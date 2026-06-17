@@ -110,7 +110,15 @@ header .sub { color: var(--muted); margin: 4px 0 20px; }
   border-radius: 12px; padding: 14px; }
 .chart-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .chart-controls select { padding: 8px 12px; background: var(--bg); color: var(--text);
-  border: 1px solid var(--border); border-radius: 8px; font-weight: 700; }
+  border: 1px solid var(--border); border-radius: 8px; font-weight: 600; }
+.settings-wrap { position: relative; }
+.settings-pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px; width: 220px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+.set-row { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 6px 2px; font-size: 0.88rem; }
+.set-row select { padding: 5px 8px; font-weight: 400; }
+.set-row input[type="checkbox"] { accent-color: var(--accent); }
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .seg button { background: var(--bg); color: var(--muted); border: none; padding: 7px 12px;
   cursor: pointer; font-size: 0.85rem; border-right: 1px solid var(--border); }

@@ -20,20 +20,26 @@ const INDICATORS = [
   ["ema20", "EMA 20"], ["bb", "Bollinger"], ["volume", "Volume"],
   ["rsi", "RSI"], ["macd", "MACD"],
 ];
+const CHART_TYPES = [
+  ["area", "Line / Area"], ["candles", "Candlesticks"], ["hollow", "Hollow Candles"],
+  ["bars", "OHLC Bars"], ["heikin", "Heikin-Ashi"],
+];
 const DEFAULT_TOGGLES = {
   sma20: true, sma50: true, sma200: false, ema20: false,
   bb: false, volume: true, rsi: true, macd: true,
 };
+const DEFAULT_OPTS = { logScale: false, grid: true, crosshair: true };
 // Chart preferences persist between visits, like the watchlist.
 const LS_TF = "sae:tf";
 const LS_TYPE = "sae:chartType";
 const LS_IND = "sae:indicators";
+const LS_OPTS = "sae:chartOpts";
 
-function loadToggles() {
+function loadJSON(key, fallback) {
   try {
-    return { ...DEFAULT_TOGGLES, ...JSON.parse(localStorage.getItem(LS_IND) || "{}") };
+    return { ...fallback, ...JSON.parse(localStorage.getItem(key) || "{}") };
   } catch {
-    return DEFAULT_TOGGLES;
+    return fallback;
   }
 }
 
@@ -45,16 +51,21 @@ export default function ChartSection({ symbol, onSymbolChange, symbols }) {
     return [m[1], m[2]];
   }, [tf]);
   const [chartType, setChartType] = useState(() => localStorage.getItem(LS_TYPE) || "area");
+  const [opts, setOpts] = useState(() => loadJSON(LS_OPTS, DEFAULT_OPTS));
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [compare, setCompare] = useState(false);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [toggles, setToggles] = useState(loadToggles);
+  const [toggles, setToggles] = useState(() => loadJSON(LS_IND, DEFAULT_TOGGLES));
 
   // Persist chart preferences.
   useEffect(() => { localStorage.setItem(LS_TF, tf); }, [tf]);
   useEffect(() => { localStorage.setItem(LS_TYPE, chartType); }, [chartType]);
   useEffect(() => { localStorage.setItem(LS_IND, JSON.stringify(toggles)); }, [toggles]);
+  useEffect(() => { localStorage.setItem(LS_OPTS, JSON.stringify(opts)); }, [opts]);
+
+  const setOpt = (k, v) => setOpts((o) => ({ ...o, [k]: v }));
 
   useEffect(() => {
     if (compare) return; // comparison chart fetches its own data
@@ -93,12 +104,37 @@ export default function ChartSection({ symbol, onSymbolChange, symbols }) {
           ))}
         </div>
         {!compare && (
-          <div className="seg">
-            <button className={chartType === "area" ? "on" : ""}
-                    onClick={() => setChartType("area")}>Line</button>
-            <button className={chartType === "candles" ? "on" : ""}
-                    onClick={() => setChartType("candles")}>Candles</button>
-          </div>
+          <>
+            <select value={chartType} onChange={(e) => setChartType(e.target.value)}>
+              {CHART_TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
+            <div className="settings-wrap">
+              <button className={`ghost ${settingsOpen ? "on" : ""}`}
+                      onClick={() => setSettingsOpen((o) => !o)} title="Chart settings">⚙</button>
+              {settingsOpen && (
+                <div className="settings-pop">
+                  <label className="set-row">
+                    <span>Price scale</span>
+                    <select value={opts.logScale ? "log" : "lin"}
+                            onChange={(e) => setOpt("logScale", e.target.value === "log")}>
+                      <option value="lin">Linear</option>
+                      <option value="log">Logarithmic</option>
+                    </select>
+                  </label>
+                  <label className="set-row">
+                    <input type="checkbox" checked={opts.grid}
+                           onChange={(e) => setOpt("grid", e.target.checked)} />
+                    <span>Gridlines</span>
+                  </label>
+                  <label className="set-row">
+                    <input type="checkbox" checked={opts.crosshair}
+                           onChange={(e) => setOpt("crosshair", e.target.checked)} />
+                    <span>Crosshair</span>
+                  </label>
+                </div>
+              )}
+            </div>
+          </>
         )}
         <button className={`ghost ${compare ? "on" : ""}`}
                 onClick={() => setCompare((c) => !c)}
@@ -127,7 +163,8 @@ export default function ChartSection({ symbol, onSymbolChange, symbols }) {
           </div>
           {error && <div className="error">⚠ {error}</div>}
           {data && data.dates?.length ? (
-            <CandleChart data={data} toggles={toggles} chartType={chartType} />
+            <CandleChart data={data} toggles={toggles}
+                         settings={{ type: chartType, ...opts }} />
           ) : (
             !loading && <div className="muted chart-empty">No candle data for {symbol}.</div>
           )}
