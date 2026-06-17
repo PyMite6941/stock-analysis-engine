@@ -186,6 +186,26 @@ header .sub { color: var(--muted); margin: 4px 0 20px; }
 .re-bar.rev { background: #42a5f5; } .re-bar.earn { background: #26a69a; }
 .re-label { font-size: 0.72rem; color: var(--muted); }
 
+/* investor insights */
+.perf-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 1px;
+  background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.perf-cell { display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: var(--panel); padding: 12px 6px; }
+.perf-label { color: var(--muted); font-size: 0.78rem; }
+.perf-val { font-weight: 700; font-size: 1rem; }
+.rec-bar { display: flex; height: 16px; border-radius: 6px; overflow: hidden; background: #21262d; }
+.rec-bar span { display: block; height: 100%; }
+.rec-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; font-size: 0.82rem; }
+.rl-item { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+.rl-item b { color: var(--text); }
+.rl-dot { width: 10px; height: 10px; border-radius: 2px; }
+.news-list { list-style: none; padding: 0; margin: 6px 0 0; }
+.news-list li { padding: 8px 0; border-bottom: 1px solid var(--border); display: flex;
+  flex-direction: column; gap: 3px; }
+.news-list a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
+.news-list a:hover { text-decoration: underline; }
+.news-meta { color: var(--muted); font-size: 0.75rem; }
+
 /* side-by-side compare table */
 .stats-compare { margin-top: 18px; }
 .compare-table th, .compare-table td { text-align: right; }

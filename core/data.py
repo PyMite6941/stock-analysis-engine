@@ -193,6 +193,59 @@ class YFinanceProvider:
         "1d": ("1d", None), "1wk": ("1wk", None), "1mo": ("1mo", None),
     }
 
+    def insights(self, symbol: str) -> dict:
+        """Beta, income/dividend detail, analyst recommendation split, and news."""
+        t = self._yf.Ticker(symbol)
+        try:
+            info = t.info
+        except Exception:
+            info = {}
+
+        price = info.get("currentPrice") or info.get("previousClose")
+        rate = _safe_float(info.get("dividendRate"))
+        payout = _safe_float(info.get("payoutRatio"))
+        income = {
+            "rate": rate,
+            "dividend_yield_pct": round(rate / price * 100, 2) if (rate and price) else None,
+            "payout_ratio_pct": round(payout * 100, 2) if payout is not None else None,
+            "five_year_avg_yield_pct": _safe_float(info.get("fiveYearAvgDividendYield")),
+            "ex_div_date": _unix_to_date(info.get("exDividendDate")),
+        }
+
+        rec = {}
+        try:
+            rdf = t.recommendations
+            if rdf is not None and not rdf.empty and "strongBuy" in rdf.columns:
+                row = rdf.iloc[0]
+                rec = {k: int(row.get(j, 0) or 0) for k, j in [
+                    ("strong_buy", "strongBuy"), ("buy", "buy"), ("hold", "hold"),
+                    ("sell", "sell"), ("strong_sell", "strongSell")]}
+        except Exception:
+            pass
+
+        news = []
+        try:
+            for n in (t.news or [])[:6]:
+                c = n.get("content", n)
+                prov = c.get("provider")
+                title = c.get("title") or n.get("title")
+                url = ((c.get("canonicalUrl") or {}).get("url")
+                       or (c.get("clickThroughUrl") or {}).get("url") or n.get("link"))
+                date = c.get("pubDate") or _unix_to_date(n.get("providerPublishTime"))
+                if title:
+                    news.append({
+                        "title": title,
+                        "publisher": (prov.get("displayName") if isinstance(prov, dict)
+                                      else n.get("publisher")),
+                        "url": url,
+                        "date": (date[:10] if isinstance(date, str) else date),
+                    })
+        except Exception:
+            pass
+
+        return {"beta": _safe_float(info.get("beta")), "income": income,
+                "recommendation": rec, "news": news}
+
     def statistics(self, symbol: str) -> dict:
         t = self._yf.Ticker(symbol)
         try:
@@ -400,6 +453,30 @@ class FinnhubProvider:
             },
         }
 
+    def insights(self, symbol: str) -> dict:
+        sym = symbol.upper()
+        m = self._get("/stock/metric", symbol=sym, metric="all").get("metric", {})
+        rec = {}
+        try:
+            data = self._get("/stock/recommendation", symbol=sym)
+            if data:
+                r = data[0]
+                rec = {"strong_buy": r.get("strongBuy", 0), "buy": r.get("buy", 0),
+                       "hold": r.get("hold", 0), "sell": r.get("sell", 0),
+                       "strong_sell": r.get("strongSell", 0)}
+        except Exception:
+            pass
+        return {
+            "beta": _safe_float(m.get("beta")),
+            "income": {
+                "rate": _safe_float(m.get("dividendPerShareAnnual")),
+                "dividend_yield_pct": _safe_float(m.get("dividendYieldIndicatedAnnual")),
+                "payout_ratio_pct": _safe_float(m.get("payoutRatioTTM")),
+                "five_year_avg_yield_pct": None, "ex_div_date": None,
+            },
+            "recommendation": rec, "news": [],
+        }
+
     _RESOLUTION = {"1d": "D", "1wk": "W", "1mo": "M", "3h": "60", "1h": "60",
                    "30m": "30", "15m": "15", "5m": "5", "2m": "1", "1m": "1"}
 
@@ -462,6 +539,10 @@ def get_fundamentals(symbol: str) -> Fundamentals:
 
 def get_statistics(symbol: str) -> dict:
     return get_provider().statistics(symbol)
+
+
+def get_insights(symbol: str) -> dict:
+    return get_provider().insights(symbol)
 
 
 def get_history(symbol: str, period: str = "6mo") -> History:

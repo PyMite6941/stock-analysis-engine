@@ -121,6 +121,24 @@ def statistics(symbol: str):
     return data.get_statistics(symbol)
 
 
+@app.get("/api/insights")
+def insights(symbol: str):
+    """Investor signals: trailing performance, risk profile, income, analyst
+    recommendation split, and recent news. Performance/risk are computed from a
+    1-year daily series; the rest comes from the data provider."""
+    out = data.get_insights(symbol)
+    candles = data.get_candles(symbol, "1y", "1d")
+    closes, dates = candles.close, candles.dates
+    out["performance"] = metrics.performance(dates, closes) if closes else {}
+    out["risk"] = {
+        "beta": out.get("beta"),
+        "annualized_volatility_pct": round(metrics.annualized_volatility_pct(closes), 2) if closes else None,
+        "max_drawdown_pct": round(metrics.max_drawdown_pct(closes), 2) if closes else None,
+    }
+    out["symbol"] = symbol.upper()
+    return out
+
+
 @app.get("/api/candles")
 def candles(symbol: str, period: str = "6mo", interval: str = "1d"):
     """Full OHLCV + the standard indicator set, aligned to the same date axis.

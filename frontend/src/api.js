@@ -27,6 +27,15 @@ export async function quotes(symbols) {
   return r.json();
 }
 
+export async function insights(symbol) {
+  const r = await fetch(`/api/insights?symbol=${encodeURIComponent(symbol)}`);
+  if (!r.ok) {
+    const detail = await r.json().catch(() => ({}));
+    throw new Error(detail.detail || `Request failed (${r.status})`);
+  }
+  return r.json();
+}
+
 export async function statistics(symbol) {
   const r = await fetch(`/api/statistics?symbol=${encodeURIComponent(symbol)}`);
   if (!r.ok) {

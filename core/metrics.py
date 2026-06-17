@@ -78,6 +78,29 @@ def _trend_signal(last, ma50, ma200) -> str:
     return "uptrend" if last > ma50 else "downtrend"
 
 
+def performance(dates: list[str], closes: list[float]) -> dict:
+    """Trailing returns over standard windows (% change to the latest close)."""
+    if len(closes) < 2:
+        return {}
+    last = closes[-1]
+    n = len(closes)
+
+    def ret(idx):
+        if idx is None or idx < 0 or idx >= n or not closes[idx]:
+            return None
+        return round((last / closes[idx] - 1) * 100, 2)
+
+    # ~21 trading days per month.
+    out = {
+        "1W": ret(n - 1 - 5), "1M": ret(n - 1 - 21), "3M": ret(n - 1 - 63),
+        "6M": ret(n - 1 - 126), "1Y": ret(0),
+    }
+    last_year = dates[-1][:4]
+    ytd_idx = next((i for i, d in enumerate(dates) if d[:4] == last_year), None)
+    out["YTD"] = ret(ytd_idx)
+    return out
+
+
 def portfolio_summary(quotes: list[Quote], analyses: list[dict]) -> dict:
     """Cross-symbol roll-up — the headline numbers for the dashboard top bar."""
     pes = [q.pe for q in quotes if q.pe]

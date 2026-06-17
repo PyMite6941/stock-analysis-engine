@@ -4,6 +4,7 @@ import QuoteTable from "./QuoteTable.jsx";
 import ChartSection from "./ChartSection.jsx";
 import FundamentalsPanel from "./FundamentalsPanel.jsx";
 import StatisticsPanel from "./StatisticsPanel.jsx";
+import InsightsPanel from "./InsightsPanel.jsx";
 import SummaryBar from "./SummaryBar.jsx";
 import ChatPanel from "./ChatPanel.jsx";
 
@@ -91,6 +92,7 @@ export default function AnalysisView({ initialSymbols, onHome }) {
               )}
               {focused && <FundamentalsPanel symbol={focused} />}
               {focused && <StatisticsPanel symbol={focused} />}
+              {focused && <InsightsPanel symbol={focused} />}
               <QuoteTable
                 quotes={data.quotes}
                 analyses={data.analyses}
