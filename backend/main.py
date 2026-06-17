@@ -109,6 +109,12 @@ def history(symbol: str, period: str = "6mo"):
     return data.get_history(symbol, period).to_dict()
 
 
+@app.get("/api/fundamentals")
+def fundamentals(symbol: str):
+    """Detailed stats + company summary for the focused symbol's info panel."""
+    return data.get_fundamentals(symbol).to_dict()
+
+
 @app.get("/api/candles")
 def candles(symbol: str, period: str = "6mo", interval: str = "1d"):
     """Full OHLCV + the standard indicator set, aligned to the same date axis.

@@ -18,7 +18,16 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-.app { max-width: 1200px; margin: 0 auto; padding: 24px; }
+.app { max-width: 1500px; margin: 0 auto; padding: 24px; }
+
+/* two-column layout: main content + AI chat sidebar */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; align-items: start; }
+.main-col { min-width: 0; }
+.side-col { position: sticky; top: 16px; }
+@media (max-width: 1000px) {
+  .layout { grid-template-columns: 1fr; }
+  .side-col { position: static; }
+}
 
 header h1 { margin: 0; font-size: 1.6rem; }
 header .sub { color: var(--muted); margin: 4px 0 20px; }
@@ -92,8 +101,25 @@ header .sub { color: var(--muted); margin: 4px 0 20px; }
 .row-active { background: #16243a; }
 .row-active .sym { text-decoration: underline; }
 
+/* fundamentals panel */
+.fundamentals { margin: 16px 0; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px; }
+.fund-head h2 { margin: 0; font-size: 1.15rem; }
+.fund-sym { color: var(--muted); font-weight: 400; }
+.fund-sector { margin: 4px 0 12px; color: var(--muted); font-size: 0.85rem; }
+.fund-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1px;
+  background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.fund-stat { display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
+  background: var(--panel); padding: 9px 12px; }
+.fund-label { color: var(--muted); font-size: 0.8rem; }
+.fund-value { font-weight: 600; font-size: 0.9rem; text-align: right; }
+.fund-summary { margin-top: 14px; }
+.fund-summary summary { cursor: pointer; color: var(--accent); font-size: 0.9rem; }
+.fund-summary p { color: var(--text); font-size: 0.9rem; line-height: 1.55; margin: 10px 0 0; }
+.fund-loading { padding: 16px; }
+
 /* chat */
-.chat { margin-top: 28px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+.chat { margin-top: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
 .chat-head { display: flex; justify-content: space-between; align-items: baseline; }
 .chat-head h2 { margin: 0; font-size: 1.1rem; }
 .chat-meta { color: var(--muted); font-size: 0.75rem; }

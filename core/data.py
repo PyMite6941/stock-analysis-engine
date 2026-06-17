@@ -47,6 +47,43 @@ class History:
 
 
 @dataclass
+class Fundamentals:
+    """Detailed per-symbol stats for the focused-symbol info panel."""
+    symbol: str
+    name: str
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    summary: Optional[str] = None          # business description
+    currency: str = "USD"
+
+    previous_close: Optional[float] = None
+    open: Optional[float] = None
+    bid: Optional[float] = None
+    bid_size: Optional[int] = None
+    ask: Optional[float] = None
+    ask_size: Optional[int] = None
+    day_low: Optional[float] = None
+    day_high: Optional[float] = None
+    week52_low: Optional[float] = None
+    week52_high: Optional[float] = None
+    volume: Optional[float] = None
+    avg_volume: Optional[float] = None
+
+    market_cap: Optional[float] = None
+    beta: Optional[float] = None
+    pe_ttm: Optional[float] = None
+    eps_ttm: Optional[float] = None
+    earnings_date: Optional[str] = None
+    forward_dividend: Optional[float] = None
+    dividend_yield_pct: Optional[float] = None
+    ex_dividend_date: Optional[str] = None
+    target_mean_price: Optional[float] = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
 class Candles:
     """Full OHLCV series for candlestick charting."""
     symbol: str
@@ -101,6 +138,46 @@ class YFinanceProvider:
                 market_cap=_safe_float(meta.get("marketCap")),
             ))
         return out
+
+    def fundamentals(self, symbol: str) -> Fundamentals:
+        try:
+            info = self._yf.Ticker(symbol).info
+        except Exception:
+            info = {}
+        price = info.get("currentPrice") or info.get("previousClose")
+        fwd_div = _safe_float(info.get("dividendRate"))
+        # Compute yield from forward dividend / price (robust across yfinance versions)
+        div_yield = round(fwd_div / price * 100, 2) if (fwd_div and price) else None
+        return Fundamentals(
+            symbol=symbol.upper(),
+            name=info.get("shortName") or info.get("longName") or symbol.upper(),
+            sector=info.get("sector"),
+            industry=info.get("industry"),
+            summary=info.get("longBusinessSummary"),
+            currency=info.get("currency", "USD"),
+            previous_close=_safe_float(info.get("previousClose")),
+            open=_safe_float(info.get("open") or info.get("regularMarketOpen")),
+            bid=_safe_float(info.get("bid")),
+            bid_size=_safe_int(info.get("bidSize")),
+            ask=_safe_float(info.get("ask")),
+            ask_size=_safe_int(info.get("askSize")),
+            day_low=_safe_float(info.get("dayLow")),
+            day_high=_safe_float(info.get("dayHigh")),
+            week52_low=_safe_float(info.get("fiftyTwoWeekLow")),
+            week52_high=_safe_float(info.get("fiftyTwoWeekHigh")),
+            volume=_safe_float(info.get("volume") or info.get("regularMarketVolume")),
+            avg_volume=_safe_float(info.get("averageVolume")),
+            market_cap=_safe_float(info.get("marketCap")),
+            beta=_safe_float(info.get("beta")),
+            pe_ttm=_safe_float(info.get("trailingPE")),
+            eps_ttm=_safe_float(info.get("trailingEps")),
+            earnings_date=_unix_to_date(info.get("earningsTimestamp")
+                                        or info.get("earningsTimestampStart")),
+            forward_dividend=fwd_div,
+            dividend_yield_pct=div_yield,
+            ex_dividend_date=_unix_to_date(info.get("exDividendDate")),
+            target_mean_price=_safe_float(info.get("targetMeanPrice")),
+        )
 
     def candles(self, symbol: str, period: str = "6mo",
                 interval: str = "1d") -> Candles:
@@ -160,6 +237,36 @@ class FinnhubProvider:
             ))
         return out
 
+    def fundamentals(self, symbol: str) -> Fundamentals:
+        sym = symbol.upper()
+        q = self._get("/quote", symbol=sym)
+        profile = self._get("/stock/profile2", symbol=sym)
+        m = self._get("/stock/metric", symbol=sym, metric="all").get("metric", {})
+        fwd_div = _safe_float(m.get("dividendPerShareAnnual"))
+        price = q.get("c")
+        return Fundamentals(
+            symbol=sym,
+            name=profile.get("name", sym),
+            sector=profile.get("finnhubIndustry"),
+            industry=profile.get("finnhubIndustry"),
+            summary=None,  # not available on the free Finnhub tier
+            currency=profile.get("currency", "USD"),
+            previous_close=_safe_float(q.get("pc")),
+            open=_safe_float(q.get("o")),
+            day_low=_safe_float(q.get("l")),
+            day_high=_safe_float(q.get("h")),
+            week52_low=_safe_float(m.get("52WeekLow")),
+            week52_high=_safe_float(m.get("52WeekHigh")),
+            avg_volume=_safe_float(m.get("10DayAverageTradingVolume"), scale=1_000_000),
+            market_cap=_safe_float(profile.get("marketCapitalization"), scale=1_000_000),
+            beta=_safe_float(m.get("beta")),
+            pe_ttm=_safe_float(m.get("peTTM")),
+            eps_ttm=_safe_float(m.get("epsTTM")),
+            forward_dividend=fwd_div,
+            dividend_yield_pct=round(fwd_div / price * 100, 2) if (fwd_div and price) else None,
+            target_mean_price=None,
+        )
+
     _RESOLUTION = {"1d": "D", "1wk": "W", "1mo": "M",
                    "1h": "60", "15m": "15", "5m": "5"}
 
@@ -216,6 +323,10 @@ def get_candles(symbol: str, period: str = "6mo", interval: str = "1d") -> Candl
     return get_provider().candles(symbol, period, interval)
 
 
+def get_fundamentals(symbol: str) -> Fundamentals:
+    return get_provider().fundamentals(symbol)
+
+
 def get_history(symbol: str, period: str = "6mo") -> History:
     # Close-only view, derived from the full candle fetch.
     return get_provider().candles(symbol, period).to_history()
@@ -230,6 +341,25 @@ def _safe_float(v, scale: float = 1.0) -> Optional[float]:
             return None
         return float(v) * scale
     except (TypeError, ValueError):
+        return None
+
+
+def _safe_int(v) -> Optional[int]:
+    try:
+        if v is None or v == "":
+            return None
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _unix_to_date(ts) -> Optional[str]:
+    """Convert a UNIX timestamp (seconds) to 'YYYY-MM-DD', tolerating junk."""
+    try:
+        if not ts:
+            return None
+        return datetime.utcfromtimestamp(int(ts)).strftime("%Y-%m-%d")
+    except (TypeError, ValueError, OSError):
         return None
 
 

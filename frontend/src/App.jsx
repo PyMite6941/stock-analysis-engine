@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { analyze, downloadCsvUrl } from "./api.js";
 import QuoteTable from "./components/QuoteTable.jsx";
 import ChartSection from "./components/ChartSection.jsx";
+import FundamentalsPanel from "./components/FundamentalsPanel.jsx";
 import SummaryBar from "./components/SummaryBar.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
 
@@ -69,16 +70,23 @@ export default function App() {
       {data && (
         <>
           <SummaryBar summary={data.summary} />
-          {focused && (
-            <ChartSection symbol={focused} onSymbolChange={setFocused} symbols={symbols} />
-          )}
-          <QuoteTable
-            quotes={data.quotes}
-            analyses={data.analyses}
-            focused={focused}
-            onSelect={setFocused}
-          />
-          <ChatPanel symbols={symbols} period={period} />
+          <div className="layout">
+            <div className="main-col">
+              {focused && (
+                <ChartSection symbol={focused} onSymbolChange={setFocused} symbols={symbols} />
+              )}
+              {focused && <FundamentalsPanel symbol={focused} />}
+              <QuoteTable
+                quotes={data.quotes}
+                analyses={data.analyses}
+                focused={focused}
+                onSelect={setFocused}
+              />
+            </div>
+            <aside className="side-col">
+              <ChatPanel symbols={symbols} period={period} />
+            </aside>
+          </div>
         </>
       )}
 
