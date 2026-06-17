@@ -45,7 +45,7 @@ async def edge_cache(request: Request, call_next):
     so the same symbol/timeframe doesn't re-hit the data provider every time."""
     response = await call_next(request)
     if request.method == "GET" and request.url.path.startswith("/api/"):
-        response.headers["Cache-Control"] = "public, s-maxage=30, stale-while-revalidate=120"
+        response.headers["Cache-Control"] = "public, s-maxage=15, stale-while-revalidate=60"
     return response
 
 

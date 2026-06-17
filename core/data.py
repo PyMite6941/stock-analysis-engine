@@ -341,11 +341,15 @@ class YFinanceProvider:
     def candles(self, symbol: str, period: str = "6mo",
                 interval: str = "1d") -> Candles:
         key = f"candles:{symbol.upper()}:{period}:{interval}"
-        cached = _cache_get(key, 30)  # 30s — smooths timeframe toggles and re-renders
+        cached = _cache_get(key, 15)  # short cache so intraday stays fresh
         if cached is not None:
             return cached
         native, resample = self._YF_INTERVAL.get(interval, ("1d", None))
-        df = self._yf.Ticker(symbol).history(period=period, interval=native).dropna()
+        intraday_iv = interval.endswith(("m", "h"))
+        # prepost=True includes pre-market / after-hours bars so the latest data
+        # isn't stuck at the 4pm close when the regular session is over.
+        df = self._yf.Ticker(symbol).history(
+            period=period, interval=native, prepost=intraday_iv).dropna()
         if resample and not df.empty:
             df = df.resample(resample).agg({
                 "Open": "first", "High": "max", "Low": "min",
