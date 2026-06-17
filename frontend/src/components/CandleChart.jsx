@@ -18,12 +18,18 @@ function lineData(dates, arr) {
   return out;
 }
 
+// IMPORTANT: intraday timestamps are encoded as the exchange's wall-clock time
+// (e.g. 09:30 = US market open) packed into a UTC epoch. Format them in UTC so
+// the axis shows market time and matches the candles + crosshair — never the
+// viewer's local timezone.
 function tickFmt(time) {
   if (typeof time === "number") {
-    return new Date(time * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return new Date(time * 1000).toLocaleTimeString([], {
+      hour: "2-digit", minute: "2-digit", timeZone: "UTC",
+    });
   }
-  const d = new Date(time + "T00:00:00");
-  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  const d = new Date(time + "T00:00:00Z");
+  return d.toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 // Heikin-Ashi OHLC derived from the raw candles.
