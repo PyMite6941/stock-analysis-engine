@@ -8,8 +8,15 @@ import ChatPanel from "./components/ChatPanel.jsx";
 
 const PERIODS = ["1mo", "3mo", "6mo", "1y", "2y", "5y"];
 
+// Watchlist + focused symbol persist in localStorage so the page remembers
+// your tickers between visits.
+const LS_SYMBOLS = "sae:symbols";
+const LS_FOCUSED = "sae:focused";
+
 export default function App() {
-  const [symbolsInput, setSymbolsInput] = useState("AAPL, MSFT, NVDA");
+  const [symbolsInput, setSymbolsInput] = useState(
+    () => localStorage.getItem(LS_SYMBOLS) || "AAPL, MSFT, NVDA"
+  );
   const [period, setPeriod] = useState("6mo");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -22,18 +29,28 @@ export default function App() {
     .filter(Boolean);
 
   async function runAnalysis() {
+    if (!symbols.length) return;
     setLoading(true);
     setError(null);
     try {
       const result = await analyze(symbols, period);
       setData(result);
-      setFocused(symbols[0] ?? null);
+      // Restore the last focused symbol if it's still in the list.
+      const saved = localStorage.getItem(LS_FOCUSED);
+      setFocused(saved && symbols.includes(saved) ? saved : symbols[0] ?? null);
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
   }
+
+  // Auto-load the saved/default watchlist on first visit so the page opens to a chart.
+  useEffect(() => { runAnalysis(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist watchlist + focused symbol.
+  useEffect(() => { localStorage.setItem(LS_SYMBOLS, symbolsInput); }, [symbolsInput]);
+  useEffect(() => { if (focused) localStorage.setItem(LS_FOCUSED, focused); }, [focused]);
 
   // Keep the focused chart symbol valid as the watchlist changes.
   useEffect(() => {

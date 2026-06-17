@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Stock Analysis Engine">
+  <rect width="64" height="64" rx="14" fill="#0d1117"/>
+  <!-- up candle -->
+  <line x1="22" y1="11" x2="22" y2="53" stroke="#26a69a" stroke-width="3"/>
+  <rect x="15" y="21" width="14" height="23" rx="2" fill="#26a69a"/>
+  <!-- down candle -->
+  <line x1="43" y1="16" x2="43" y2="57" stroke="#ef5350" stroke-width="3"/>
+  <rect x="36" y="31" width="14" height="20" rx="2" fill="#ef5350"/>
+</svg>
