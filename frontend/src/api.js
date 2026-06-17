@@ -17,6 +17,16 @@ export function analyze(symbols, period = "6mo") {
   return post("/api/analyze", { symbols, period });
 }
 
+export async function quotes(symbols) {
+  const q = encodeURIComponent(symbols.join(","));
+  const r = await fetch(`/api/quotes?symbols=${q}`);
+  if (!r.ok) {
+    const detail = await r.json().catch(() => ({}));
+    throw new Error(detail.detail || `Request failed (${r.status})`);
+  }
+  return r.json();
+}
+
 export async function fundamentals(symbol) {
   const r = await fetch(`/api/fundamentals?symbol=${encodeURIComponent(symbol)}`);
   if (!r.ok) {
