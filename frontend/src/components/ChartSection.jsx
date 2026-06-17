@@ -1,9 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { candles as fetchCandles } from "../api.js";
 import CandleChart from "./CandleChart.jsx";
 
-const PERIODS = ["1mo", "3mo", "6mo", "1y", "2y", "5y"];
-const INTERVALS = [["1d", "Daily"], ["1wk", "Weekly"]];
+// label -> [period, interval]. 1D/5D are intraday (hourly / 3-hour bars).
+const TIMEFRAMES = [
+  ["1D", "1d", "1h"],
+  ["5D", "5d", "3h"],
+  ["1M", "1mo", "1d"],
+  ["3M", "3mo", "1d"],
+  ["6M", "6mo", "1d"],
+  ["1Y", "1y", "1d"],
+  ["2Y", "2y", "1wk"],
+  ["5Y", "5y", "1wk"],
+];
 const INDICATORS = [
   ["sma20", "SMA 20"], ["sma50", "SMA 50"], ["sma200", "SMA 200"],
   ["ema20", "EMA 20"], ["bb", "Bollinger"], ["volume", "Volume"],
@@ -12,8 +21,11 @@ const INDICATORS = [
 
 // Controlled `symbol` so clicking a watchlist row drives this chart.
 export default function ChartSection({ symbol, onSymbolChange, symbols }) {
-  const [period, setPeriod] = useState("6mo");
-  const [interval, setIntervalVal] = useState("1d");
+  const [tf, setTf] = useState("6M");
+  const [period, interval] = useMemo(() => {
+    const m = TIMEFRAMES.find((t) => t[0] === tf) || TIMEFRAMES[4];
+    return [m[1], m[2]];
+  }, [tf]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -50,15 +62,9 @@ export default function ChartSection({ symbol, onSymbolChange, symbols }) {
           {symbols.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
         <div className="seg">
-          {PERIODS.map((p) => (
-            <button key={p} className={p === period ? "on" : ""}
-                    onClick={() => setPeriod(p)}>{p}</button>
-          ))}
-        </div>
-        <div className="seg">
-          {INTERVALS.map(([v, label]) => (
-            <button key={v} className={v === interval ? "on" : ""}
-                    onClick={() => setIntervalVal(v)}>{label}</button>
+          {TIMEFRAMES.map(([label]) => (
+            <button key={label} className={label === tf ? "on" : ""}
+                    onClick={() => setTf(label)}>{label}</button>
           ))}
         </div>
         {loading && <span className="muted">loading…</span>}

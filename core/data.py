@@ -179,13 +179,28 @@ class YFinanceProvider:
             target_mean_price=_safe_float(info.get("targetMeanPrice")),
         )
 
+    # frontend interval -> (yfinance native interval, optional pandas resample rule).
+    # yfinance has no native 3h, so we pull hourly and aggregate to 3h.
+    _YF_INTERVAL = {
+        "5m": ("5m", None), "15m": ("15m", None),
+        "1h": ("60m", None), "3h": ("60m", "3h"),
+        "1d": ("1d", None), "1wk": ("1wk", None), "1mo": ("1mo", None),
+    }
+
     def candles(self, symbol: str, period: str = "6mo",
                 interval: str = "1d") -> Candles:
-        df = self._yf.Ticker(symbol).history(period=period, interval=interval).dropna()
+        native, resample = self._YF_INTERVAL.get(interval, ("1d", None))
+        df = self._yf.Ticker(symbol).history(period=period, interval=native).dropna()
+        if resample and not df.empty:
+            df = df.resample(resample).agg({
+                "Open": "first", "High": "max", "Low": "min",
+                "Close": "last", "Volume": "sum",
+            }).dropna()
+        intraday = interval.endswith(("m", "h"))
+        fmt = "%Y-%m-%d %H:%M" if intraday else "%Y-%m-%d"
         return Candles(
             symbol=symbol.upper(),
-            dates=[d.strftime("%Y-%m-%d %H:%M") if interval.endswith(("m", "h"))
-                   else d.strftime("%Y-%m-%d") for d in df.index],
+            dates=[d.strftime(fmt) for d in df.index],
             open=[round(float(x), 4) for x in df["Open"].values],
             high=[round(float(x), 4) for x in df["High"].values],
             low=[round(float(x), 4) for x in df["Low"].values],
@@ -268,7 +283,7 @@ class FinnhubProvider:
         )
 
     _RESOLUTION = {"1d": "D", "1wk": "W", "1mo": "M",
-                   "1h": "60", "15m": "15", "5m": "5"}
+                   "3h": "60", "1h": "60", "15m": "15", "5m": "5"}
 
     def candles(self, symbol: str, period: str = "6mo",
                 interval: str = "1d") -> Candles:
@@ -364,5 +379,6 @@ def _unix_to_date(ts) -> Optional[str]:
 
 
 def _period_to_days(period: str) -> int:
-    table = {"1mo": 31, "3mo": 93, "6mo": 186, "1y": 366, "2y": 731, "5y": 1827}
+    table = {"1d": 1, "5d": 5, "1mo": 31, "3mo": 93, "6mo": 186,
+             "1y": 366, "2y": 731, "5y": 1827}
     return table.get(period, 186)
