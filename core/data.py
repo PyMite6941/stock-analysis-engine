@@ -13,9 +13,32 @@ Select with the DATA_PROVIDER env var. Add a provider by writing a class with
 from __future__ import annotations
 
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 from typing import Optional
+
+
+# ---------------------------------------------------------------------------
+# Tiny in-process TTL cache.
+# A single analysis-page load hits the slow yfinance `.info` scrape ~4x per
+# symbol (quotes + fundamentals + statistics + insights). Caching it collapses
+# those to one fetch, and keeps repeat views fast on a warm serverless instance.
+# ---------------------------------------------------------------------------
+_CACHE: dict[str, tuple[float, object]] = {}
+
+
+def _cache_get(key: str, ttl: float):
+    entry = _CACHE.get(key)
+    if entry and (time.time() - entry[0]) < ttl:
+        return entry[1]
+    return None
+
+
+def _cache_put(key: str, value):
+    _CACHE[key] = (time.time(), value)
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -113,41 +136,48 @@ class YFinanceProvider:
         import yfinance  # imported lazily so finnhub-only installs don't need it
         self._yf = yfinance
 
-    def quotes(self, symbols: list[str]) -> list[Quote]:
-        out: list[Quote] = []
-        tickers = self._yf.Tickers(" ".join(symbols))
-        for sym in symbols:
-            t = tickers.tickers.get(sym.upper()) or self._yf.Ticker(sym)
-            info = getattr(t, "fast_info", {}) or {}
-            try:
-                meta = t.info  # heavier; wrapped because it can throw
-            except Exception:
-                meta = {}
-            # Index symbols (^GSPC, ^VIX, …) expose level via regularMarketPrice,
-            # not currentPrice/last_price — so include those in the fallback chain.
-            price = (info.get("last_price") or meta.get("currentPrice")
-                     or meta.get("regularMarketPrice") or meta.get("previousClose") or 0.0)
-            prev = (info.get("previous_close") or meta.get("regularMarketPreviousClose")
-                    or meta.get("previousClose") or price)
-            change = (price - prev) if price and prev else 0.0
-            change_pct = (change / prev * 100) if prev else 0.0
-            out.append(Quote(
-                symbol=sym.upper(),
-                name=meta.get("shortName") or meta.get("longName") or sym.upper(),
-                price=round(float(price), 4),
-                change=round(float(change), 4),
-                change_pct=round(float(change_pct), 4),
-                currency=meta.get("currency") or info.get("currency") or "USD",
-                pe=_safe_float(meta.get("trailingPE")),
-                market_cap=_safe_float(meta.get("marketCap")),
-            ))
-        return out
-
-    def fundamentals(self, symbol: str) -> Fundamentals:
+    def _info(self, symbol: str) -> dict:
+        """Cached `Ticker.info` — the slow scrape shared across endpoints (5 min)."""
+        key = f"info:{symbol.upper()}"
+        cached = _cache_get(key, 300)
+        if cached is not None:
+            return cached
         try:
             info = self._yf.Ticker(symbol).info
         except Exception:
             info = {}
+        return _cache_put(key, info)
+
+    def _quote_one(self, sym: str) -> Quote:
+        sym = sym.upper()
+        fast = getattr(self._yf.Ticker(sym), "fast_info", {}) or {}
+        meta = self._info(sym)
+        # Index symbols (^GSPC, ^VIX, …) expose level via regularMarketPrice,
+        # not currentPrice/last_price — so include those in the fallback chain.
+        price = (fast.get("last_price") or meta.get("currentPrice")
+                 or meta.get("regularMarketPrice") or meta.get("previousClose") or 0.0)
+        prev = (fast.get("previous_close") or meta.get("regularMarketPreviousClose")
+                or meta.get("previousClose") or price)
+        change = (price - prev) if price and prev else 0.0
+        change_pct = (change / prev * 100) if prev else 0.0
+        return Quote(
+            symbol=sym,
+            name=meta.get("shortName") or meta.get("longName") or sym,
+            price=round(float(price), 4),
+            change=round(float(change), 4),
+            change_pct=round(float(change_pct), 4),
+            currency=meta.get("currency") or fast.get("currency") or "USD",
+            pe=_safe_float(meta.get("trailingPE")),
+            market_cap=_safe_float(meta.get("marketCap")),
+        )
+
+    def quotes(self, symbols: list[str]) -> list[Quote]:
+        # Fetch in parallel — each symbol's .info is an independent network call.
+        with ThreadPoolExecutor(max_workers=min(8, max(1, len(symbols)))) as ex:
+            return list(ex.map(self._quote_one, symbols))
+
+    def fundamentals(self, symbol: str) -> Fundamentals:
+        info = self._info(symbol)
         price = info.get("currentPrice") or info.get("previousClose")
         fwd_div = _safe_float(info.get("dividendRate"))
         # Compute yield from forward dividend / price (robust across yfinance versions)
@@ -196,10 +226,7 @@ class YFinanceProvider:
     def insights(self, symbol: str) -> dict:
         """Beta, income/dividend detail, analyst recommendation split, and news."""
         t = self._yf.Ticker(symbol)
-        try:
-            info = t.info
-        except Exception:
-            info = {}
+        info = self._info(symbol)
 
         price = info.get("currentPrice") or info.get("previousClose")
         rate = _safe_float(info.get("dividendRate"))
@@ -248,10 +275,7 @@ class YFinanceProvider:
 
     def statistics(self, symbol: str) -> dict:
         t = self._yf.Ticker(symbol)
-        try:
-            info = t.info
-        except Exception:
-            info = {}
+        info = self._info(symbol)
 
         # Quarterly revenue vs. earnings (last 4 quarters, oldest -> newest).
         quarterly = []
@@ -316,6 +340,10 @@ class YFinanceProvider:
 
     def candles(self, symbol: str, period: str = "6mo",
                 interval: str = "1d") -> Candles:
+        key = f"candles:{symbol.upper()}:{period}:{interval}"
+        cached = _cache_get(key, 30)  # 30s — smooths timeframe toggles and re-renders
+        if cached is not None:
+            return cached
         native, resample = self._YF_INTERVAL.get(interval, ("1d", None))
         df = self._yf.Ticker(symbol).history(period=period, interval=native).dropna()
         if resample and not df.empty:
@@ -325,7 +353,7 @@ class YFinanceProvider:
             }).dropna()
         intraday = interval.endswith(("m", "h"))
         fmt = "%Y-%m-%d %H:%M" if intraday else "%Y-%m-%d"
-        return Candles(
+        result = Candles(
             symbol=symbol.upper(),
             dates=[d.strftime(fmt) for d in df.index],
             open=[round(float(x), 4) for x in df["Open"].values],
@@ -334,6 +362,7 @@ class YFinanceProvider:
             close=[round(float(x), 4) for x in df["Close"].values],
             volume=[float(x) for x in df["Volume"].values],
         )
+        return _cache_put(key, result)
 
 
 class FinnhubProvider:

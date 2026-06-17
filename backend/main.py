@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import csv
 import io
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -36,6 +37,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def edge_cache(request: Request, call_next):
+    """Let Vercel's CDN serve repeat GETs instantly and refresh in the background,
+    so the same symbol/timeframe doesn't re-hit the data provider every time."""
+    response = await call_next(request)
+    if request.method == "GET" and request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "public, s-maxage=30, stale-while-revalidate=120"
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -62,10 +73,12 @@ class ChatRequest(BaseModel):
 # ---------------------------------------------------------------------------
 def _analyze(symbols: list[str], period: str) -> dict:
     quotes = data.get_quotes(symbols)
+    # Fetch per-symbol history in parallel instead of one-at-a-time.
+    with ThreadPoolExecutor(max_workers=min(8, max(1, len(symbols)))) as ex:
+        hists = list(ex.map(lambda s: data.get_history(s, period), symbols))
     analyses, histories = [], {}
-    for sym in symbols:
-        hist = data.get_history(sym, period)
-        histories[sym.upper()] = hist.to_dict()
+    for hist in hists:
+        histories[hist.symbol] = hist.to_dict()
         analyses.append(metrics.analyze_history(hist))
     summary = metrics.portfolio_summary(quotes, analyses)
     return {
