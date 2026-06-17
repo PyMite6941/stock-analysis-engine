@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { candles as fetchCandles } from "../api.js";
 import CandleChart from "./CandleChart.jsx";
+import ComparisonChart from "./ComparisonChart.jsx";
 
 // label -> [period, interval]. 1D/5D use fine intraday bars for Yahoo-like density.
 const TIMEFRAMES = [
@@ -18,24 +19,44 @@ const INDICATORS = [
   ["ema20", "EMA 20"], ["bb", "Bollinger"], ["volume", "Volume"],
   ["rsi", "RSI"], ["macd", "MACD"],
 ];
+const DEFAULT_TOGGLES = {
+  sma20: true, sma50: true, sma200: false, ema20: false,
+  bb: false, volume: true, rsi: true, macd: true,
+};
+// Chart preferences persist between visits, like the watchlist.
+const LS_TF = "sae:tf";
+const LS_TYPE = "sae:chartType";
+const LS_IND = "sae:indicators";
+
+function loadToggles() {
+  try {
+    return { ...DEFAULT_TOGGLES, ...JSON.parse(localStorage.getItem(LS_IND) || "{}") };
+  } catch {
+    return DEFAULT_TOGGLES;
+  }
+}
 
 // Controlled `symbol` so clicking a watchlist row drives this chart.
 export default function ChartSection({ symbol, onSymbolChange, symbols }) {
-  const [tf, setTf] = useState("6M");
+  const [tf, setTf] = useState(() => localStorage.getItem(LS_TF) || "6M");
   const [period, interval] = useMemo(() => {
     const m = TIMEFRAMES.find((t) => t[0] === tf) || TIMEFRAMES[4];
     return [m[1], m[2]];
   }, [tf]);
-  const [chartType, setChartType] = useState("area"); // Yahoo-style line is the default
+  const [chartType, setChartType] = useState(() => localStorage.getItem(LS_TYPE) || "area");
+  const [compare, setCompare] = useState(false);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [toggles, setToggles] = useState({
-    sma20: true, sma50: true, sma200: false, ema20: false,
-    bb: false, volume: true, rsi: true, macd: true,
-  });
+  const [toggles, setToggles] = useState(loadToggles);
+
+  // Persist chart preferences.
+  useEffect(() => { localStorage.setItem(LS_TF, tf); }, [tf]);
+  useEffect(() => { localStorage.setItem(LS_TYPE, chartType); }, [chartType]);
+  useEffect(() => { localStorage.setItem(LS_IND, JSON.stringify(toggles)); }, [toggles]);
 
   useEffect(() => {
+    if (compare) return; // comparison chart fetches its own data
     let cancelled = false;
     async function load() {
       if (!symbol) return;
@@ -52,46 +73,61 @@ export default function ChartSection({ symbol, onSymbolChange, symbols }) {
     }
     load();
     return () => { cancelled = true; };
-  }, [symbol, period, interval]);
+  }, [symbol, period, interval, compare]);
 
   const toggle = (key) => setToggles((t) => ({ ...t, [key]: !t[key] }));
 
   return (
     <section className="chart-section">
       <div className="chart-controls">
-        <select value={symbol} onChange={(e) => onSymbolChange(e.target.value)}>
-          {symbols.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
+        {!compare && (
+          <select value={symbol} onChange={(e) => onSymbolChange(e.target.value)}>
+            {symbols.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        )}
         <div className="seg">
           {TIMEFRAMES.map(([label]) => (
             <button key={label} className={label === tf ? "on" : ""}
                     onClick={() => setTf(label)}>{label}</button>
           ))}
         </div>
-        <div className="seg">
-          <button className={chartType === "area" ? "on" : ""}
-                  onClick={() => setChartType("area")}>Line</button>
-          <button className={chartType === "candles" ? "on" : ""}
-                  onClick={() => setChartType("candles")}>Candles</button>
-        </div>
+        {!compare && (
+          <div className="seg">
+            <button className={chartType === "area" ? "on" : ""}
+                    onClick={() => setChartType("area")}>Line</button>
+            <button className={chartType === "candles" ? "on" : ""}
+                    onClick={() => setChartType("candles")}>Candles</button>
+          </div>
+        )}
+        <button className={`ghost ${compare ? "on" : ""}`}
+                onClick={() => setCompare((c) => !c)}
+                disabled={!compare && symbols.length < 2}
+                title={symbols.length < 2 ? "Add 2+ tickers to compare" : ""}>
+          {compare ? "← Single" : "⇄ Compare"}
+        </button>
         {loading && <span className="muted">loading…</span>}
       </div>
 
-      <div className="indicator-toggles">
-        {INDICATORS.map(([key, label]) => (
-          <label key={key} className={`tog ${toggles[key] ? "on" : ""}`}>
-            <input type="checkbox" checked={toggles[key]}
-                   onChange={() => toggle(key)} />
-            {label}
-          </label>
-        ))}
-      </div>
-
-      {error && <div className="error">⚠ {error}</div>}
-      {data && data.dates?.length ? (
-        <CandleChart data={data} toggles={toggles} chartType={chartType} />
+      {compare ? (
+        <ComparisonChart symbols={symbols} period={period} interval={interval} />
       ) : (
-        !loading && <div className="muted chart-empty">No candle data for {symbol}.</div>
+        <>
+          <div className="indicator-toggles">
+            {INDICATORS.map(([key, label]) => (
+              <label key={key} className={`tog ${toggles[key] ? "on" : ""}`}>
+                <input type="checkbox" checked={toggles[key]}
+                       onChange={() => toggle(key)} />
+                {label}
+              </label>
+            ))}
+          </div>
+          {error && <div className="error">⚠ {error}</div>}
+          {data && data.dates?.length ? (
+            <CandleChart data={data} toggles={toggles} chartType={chartType} />
+          ) : (
+            !loading && <div className="muted chart-empty">No candle data for {symbol}.</div>
+          )}
+        </>
       )}
     </section>
   );
