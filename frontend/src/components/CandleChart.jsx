@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import {
-  createChart, CandlestickSeries, LineSeries, HistogramSeries,
+  createChart, CandlestickSeries, AreaSeries, LineSeries, HistogramSeries,
 } from "lightweight-charts";
 
 // lightweight-charts wants either a 'YYYY-MM-DD' business-day string or a UNIX
@@ -21,12 +21,18 @@ function lineData(dates, arr) {
   return out;
 }
 
-export default function CandleChart({ data, toggles }) {
+// Yahoo-style axis labels: HH:MM for intraday, "Mon D" for daily.
+function tickFmt(time) {
+  if (typeof time === "number") {
+    return new Date(time * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  const d = new Date(time + "T00:00:00");
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+export default function CandleChart({ data, toggles, chartType = "area" }) {
   const ref = useRef(null);
 
-  // Full rebuild whenever the data or the indicator toggles change. The chart is
-  // light enough that recreating it is simpler and less bug-prone than juggling
-  // add/remove of individual panes and series.
   useEffect(() => {
     if (!ref.current || !data?.dates?.length) return;
     const intraday = data.dates[0].includes(" ");
@@ -40,20 +46,40 @@ export default function CandleChart({ data, toggles }) {
         panes: { separatorColor: "#30363d", separatorHoverColor: "#444" },
       },
       grid: { vertLines: { color: "#161b22" }, horzLines: { color: "#161b22" } },
-      timeScale: { borderColor: "#30363d", timeVisible: intraday },
+      timeScale: {
+        borderColor: "#30363d",
+        timeVisible: intraday,
+        secondsVisible: false,
+        rightOffset: 2,
+        minBarSpacing: 0.5,
+        tickMarkFormatter: tickFmt,
+      },
       rightPriceScale: { borderColor: "#30363d" },
       crosshair: { mode: 1 },
     });
 
-    // --- Pane 0: candles + overlays ---
-    const candle = chart.addSeries(CandlestickSeries, {
-      upColor: "#26a69a", downColor: "#ef5350", borderVisible: false,
-      wickUpColor: "#26a69a", wickDownColor: "#ef5350",
-    }, 0);
-    candle.setData(data.dates.map((d, i) => ({
-      time: t(i), open: data.open[i], high: data.high[i],
-      low: data.low[i], close: data.close[i],
-    })));
+    // --- Pane 0: main price series + overlays ---
+    const up = data.close.at(-1) >= data.close[0];
+    if (chartType === "candles") {
+      const candle = chart.addSeries(CandlestickSeries, {
+        upColor: "#26a69a", downColor: "#ef5350", borderVisible: false,
+        wickUpColor: "#26a69a", wickDownColor: "#ef5350",
+      }, 0);
+      candle.setData(data.dates.map((d, i) => ({
+        time: t(i), open: data.open[i], high: data.high[i],
+        low: data.low[i], close: data.close[i],
+      })));
+    } else {
+      // Yahoo-style filled line (area)
+      const color = up ? "#26a69a" : "#ef5350";
+      const area = chart.addSeries(AreaSeries, {
+        lineColor: color, lineWidth: 2,
+        topColor: up ? "rgba(38,166,154,0.35)" : "rgba(239,83,80,0.35)",
+        bottomColor: "rgba(13,17,23,0)",
+        priceLineVisible: false,
+      }, 0);
+      area.setData(data.dates.map((d, i) => ({ time: t(i), value: data.close[i] })));
+    }
 
     const ind = data.indicators || {};
     const overlay = (arr, color) => {
@@ -111,13 +137,12 @@ export default function CandleChart({ data, toggles }) {
       pane++;
     }
 
-    // Give the price pane the most height; lower panes share the rest.
     const panes = chart.panes();
     if (panes[0]) panes[0].setHeight(320);
 
     chart.timeScale().fitContent();
     return () => chart.remove();
-  }, [data, toggles]);
+  }, [data, toggles, chartType]);
 
   return <div ref={ref} className="candle-chart" />;
 }

@@ -2,10 +2,10 @@ import { useState, useEffect, useMemo } from "react";
 import { candles as fetchCandles } from "../api.js";
 import CandleChart from "./CandleChart.jsx";
 
-// label -> [period, interval]. 1D/5D are intraday (hourly / 3-hour bars).
+// label -> [period, interval]. 1D/5D use fine intraday bars for Yahoo-like density.
 const TIMEFRAMES = [
-  ["1D", "1d", "1h"],
-  ["5D", "5d", "3h"],
+  ["1D", "1d", "2m"],
+  ["5D", "5d", "15m"],
   ["1M", "1mo", "1d"],
   ["3M", "3mo", "1d"],
   ["6M", "6mo", "1d"],
@@ -26,6 +26,7 @@ export default function ChartSection({ symbol, onSymbolChange, symbols }) {
     const m = TIMEFRAMES.find((t) => t[0] === tf) || TIMEFRAMES[4];
     return [m[1], m[2]];
   }, [tf]);
+  const [chartType, setChartType] = useState("area"); // Yahoo-style line is the default
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -67,6 +68,12 @@ export default function ChartSection({ symbol, onSymbolChange, symbols }) {
                     onClick={() => setTf(label)}>{label}</button>
           ))}
         </div>
+        <div className="seg">
+          <button className={chartType === "area" ? "on" : ""}
+                  onClick={() => setChartType("area")}>Line</button>
+          <button className={chartType === "candles" ? "on" : ""}
+                  onClick={() => setChartType("candles")}>Candles</button>
+        </div>
         {loading && <span className="muted">loading…</span>}
       </div>
 
@@ -82,7 +89,7 @@ export default function ChartSection({ symbol, onSymbolChange, symbols }) {
 
       {error && <div className="error">⚠ {error}</div>}
       {data && data.dates?.length ? (
-        <CandleChart data={data} toggles={toggles} />
+        <CandleChart data={data} toggles={toggles} chartType={chartType} />
       ) : (
         !loading && <div className="muted chart-empty">No candle data for {symbol}.</div>
       )}

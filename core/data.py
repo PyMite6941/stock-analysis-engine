@@ -184,9 +184,11 @@ class YFinanceProvider:
         )
 
     # frontend interval -> (yfinance native interval, optional pandas resample rule).
+    # Fine intraday intervals (2m/5m/15m/30m) give Yahoo-like notch density.
     # yfinance has no native 3h, so we pull hourly and aggregate to 3h.
     _YF_INTERVAL = {
-        "5m": ("5m", None), "15m": ("15m", None),
+        "1m": ("1m", None), "2m": ("2m", None), "5m": ("5m", None),
+        "15m": ("15m", None), "30m": ("30m", None),
         "1h": ("60m", None), "3h": ("60m", "3h"),
         "1d": ("1d", None), "1wk": ("1wk", None), "1mo": ("1mo", None),
     }
@@ -286,8 +288,8 @@ class FinnhubProvider:
             target_mean_price=None,
         )
 
-    _RESOLUTION = {"1d": "D", "1wk": "W", "1mo": "M",
-                   "3h": "60", "1h": "60", "15m": "15", "5m": "5"}
+    _RESOLUTION = {"1d": "D", "1wk": "W", "1mo": "M", "3h": "60", "1h": "60",
+                   "30m": "30", "15m": "15", "5m": "5", "2m": "1", "1m": "1"}
 
     def candles(self, symbol: str, period: str = "6mo",
                 interval: str = "1d") -> Candles:
