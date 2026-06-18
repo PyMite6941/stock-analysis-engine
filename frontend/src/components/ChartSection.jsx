@@ -5,8 +5,8 @@ import ComparisonChart from "./ComparisonChart.jsx";
 import StatsCompare from "./StatsCompare.jsx";
 
 const TIMEFRAMES = [
-  ["1D", "1d", "2m"], ["5D", "5d", "15m"], ["1M", "1mo", "1d"],
-  ["3M", "3mo", "1d"], ["6M", "6mo", "1d"], ["1Y", "1y", "1d"],
+  ["1D", "1d", "5m"], ["5D", "5d", "15m"], ["1M", "1mo", "30m"],
+  ["3M", "3mo", "3h"], ["6M", "6mo", "3h"], ["1Y", "1y", "1d"],
   ["2Y", "2y", "1wk"], ["5Y", "5y", "1wk"],
 ];
 const INDICATORS = [
