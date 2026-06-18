@@ -29,7 +29,7 @@ function Card({ q, label, onClick }) {
   );
 }
 
-export default function HomePage({ onSearch }) {
+export default function HomePage({ onSearch, theme, toggleTheme }) {
   const [query, setQuery] = useState("");
   const [indices, setIndices] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
@@ -82,7 +82,13 @@ export default function HomePage({ onSearch }) {
   return (
     <div className="home">
       <div className="hero">
-        <div className="logo-mark">📈</div>
+        <div className="logo-mark" style={{ position: "relative" }}>
+          📈
+          <button className="theme-btn" onClick={toggleTheme}
+                  style={{ position: "absolute", right: 0, top: 0, fontSize: "0.9rem" }}>
+            {theme === "dark" ? "☀️" : "🌙"}
+          </button>
+        </div>
         <h1>Stock Analysis Engine</h1>
         <p className="tagline">
           A free, lean charting tool — candlesticks, indicators, fundamentals, and an AI analyst.
@@ -101,7 +107,22 @@ export default function HomePage({ onSearch }) {
       </div>
 
       {error && <div className="error">⚠ {error}</div>}
-      {loading && <div className="empty">Loading market standings…</div>}
+      {loading && (
+        <>
+          <section className="standings">
+            <h2>Markets</h2>
+            <div className="skeleton-standings">
+              {[1,2,3,4,5].map((i) => <div key={i} className="skeleton skeleton-card" />)}
+            </div>
+          </section>
+          <section className="standings">
+            <h2>Your watchlist</h2>
+            <div className="skeleton-standings">
+              {[1,2,3].map((i) => <div key={i} className="skeleton skeleton-card" />)}
+            </div>
+          </section>
+        </>
+      )}
 
       {!loading && (
         <>

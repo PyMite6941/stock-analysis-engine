@@ -9,6 +9,17 @@
   --neg: #f85149;
 }
 
+.light {
+  --bg: #f6f8fa;
+  --panel: #ffffff;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --muted: #656d76;
+  --accent: #0969da;
+  --pos: #1a7f37;
+  --neg: #cf222e;
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -231,3 +242,156 @@ header .sub { color: var(--muted); margin: 4px 0 20px; }
 .chat-input button { padding: 10px 18px; background: var(--accent); color: #0d1117;
   border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
 .chat-input button:disabled { opacity: 0.5; }
+
+/* ===== Print Styles ===== */
+@media print {
+  body { background: #fff; color: #000; }
+  .side-col, .chat, .controls, .chart-controls, .indicator-toggles,
+  .app-header .ghost, .search, .hero, .fund-summary, .news-list,
+  .settings-wrap, .ghost { display: none !important; }
+  .layout { display: block; }
+  .quote-table { font-size: 0.75rem; }
+  .quote-table th { background: #eee; }
+  .fund-grid, .perf-row, .rec-bar { break-inside: avoid; }
+  .candle-chart { height: 300px; page-break-inside: avoid; }
+}
+
+/* ===== Theme Toggle ===== */
+.theme-btn { font-size: 1.1rem; background: none; border: 1px solid var(--border);
+  color: var(--text); padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+.theme-btn:hover { border-color: var(--accent); }
+
+/* ===== Loading Skeletons ===== */
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton { background: linear-gradient(90deg, var(--panel) 25%, var(--border) 50%, var(--panel) 75%);
+  background-size: 800px 100%; animation: shimmer 1.5s infinite linear; border-radius: 6px; }
+.skeleton-card { height: 80px; }
+.skeleton-table { height: 300px; margin: 16px 0; }
+.skeleton-chart { height: 400px; margin: 16px 0; }
+.skeleton-text { height: 16px; margin: 8px 0; width: 60%; }
+.skeleton-text.short { width: 35%; }
+.skeleton-summary { display: flex; gap: 12px; margin: 24px 0 8px; }
+.skeleton-summary > div { height: 72px; flex: 1; min-width: 120px; border-radius: 10px; }
+.skeleton-standings { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.skeleton-standings > div { height: 90px; border-radius: 12px; }
+
+/* ===== Animations ===== */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fadeIn 0.35s ease-out both; }
+
+.chart-section, .summary-bar, .quote-table, .fundamentals,
+.stats-panel, .chat, .insights-panel {
+  animation: fadeIn 0.35s ease-out both;
+}
+.chart-section { animation-delay: 0s; }
+.summary-bar { animation-delay: 0.05s; }
+.quote-table { animation-delay: 0.1s; }
+
+/* Skeleton shimmer already has its own animation. */
+
+/* ===== Fullscreen Chart ===== */
+.chart-section:-webkit-full-screen { padding: 20px; background: var(--bg); }
+.chart-section:fullscreen { padding: 20px; background: var(--bg); }
+.chart-section:-webkit-full-screen .candle-chart { height: calc(100vh - 160px); }
+.chart-section:fullscreen .candle-chart { height: calc(100vh - 160px); }
+
+/* ===== Drawing Mode ===== */
+.draw-mode { cursor: crosshair; }
+.chart-section .ghost.on { border-color: var(--accent); background: #16243a; color: var(--text); }
+.light .chart-section .ghost.on { background: #ddf4ff; }
+
+/* ===== Theme transition ===== */
+body, .app, .home, .standing-card, .summary-card, .chart-section,
+.chat, .fundamentals, .stats-panel, .quote-table,
+.settings-pop, .fund-stat, .perf-cell, .bubble.assistant {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+/* ===== Mobile Responsive Tweaks ===== */
+
+@media (max-width: 768px) {
+  .app { padding: 12px; }
+  .home { padding: 12px; }
+
+  .hero { padding: 24px 8px 16px; }
+  .hero h1 { font-size: 1.5rem; }
+  .logo-mark { font-size: 1.8rem; }
+  .tagline { font-size: 0.9rem; }
+
+  .search { flex-direction: column; gap: 8px; }
+  .search input { font-size: 1rem; padding: 12px 14px; }
+  .search button { width: 100%; padding: 12px; }
+
+  .standing-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+
+  .controls { flex-direction: column; align-items: stretch; }
+  .controls input { min-width: 0; }
+  .controls select, .controls button, .download { text-align: center; }
+
+  .quote-table { font-size: 0.78rem; display: block; overflow-x: auto; white-space: nowrap; }
+  .quote-table th, .quote-table td { padding: 7px 6px; }
+
+  .summary-card { min-width: 0; flex: 1; padding: 10px 12px; }
+  .summary-value { font-size: 1.1rem; }
+  .summary-note { width: 100%; }
+
+  .candle-chart { height: 320px; }
+
+  .chart-controls { gap: 8px; }
+  .seg { flex-wrap: wrap; }
+  .seg button { font-size: 0.78rem; padding: 6px 9px; }
+
+  .indicator-toggles { gap: 5px; }
+  .tog { font-size: 0.75rem; padding: 4px 8px; }
+
+  .settings-pop { right: auto; left: 0; width: 200px; }
+
+  .fund-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .fund-stat { padding: 7px 10px; }
+  .fund-label { font-size: 0.75rem; }
+  .fund-value { font-size: 0.82rem; }
+
+  .perf-row { grid-template-columns: repeat(auto-fit, minmax(75px, 1fr)); }
+  .perf-cell { padding: 8px 4px; }
+  .perf-label { font-size: 0.72rem; }
+  .perf-val { font-size: 0.88rem; }
+
+  .target-ends { font-size: 0.7rem; }
+
+  .revearn { height: 110px; gap: 10px; }
+  .re-bar { width: 14px; }
+  .re-label { font-size: 0.65rem; }
+
+  .chat { padding: 12px; }
+  .chat-log { max-height: 280px; }
+  .bubble { max-width: 90%; font-size: 0.88rem; }
+  .chip { font-size: 0.78rem; padding: 5px 10px; }
+
+  .compare-table { font-size: 0.78rem; display: block; overflow-x: auto; white-space: nowrap; }
+  .compare-table th, .compare-table td { padding: 6px 5px; }
+
+  .rec-bar { height: 12px; }
+  .rec-legend { font-size: 0.75rem; gap: 8px; }
+
+  .news-list a { font-size: 0.85rem; }
+
+  .stats-panel h2 { font-size: 1rem; }
+  .stats-h { font-size: 0.88rem; }
+}
+
+@media (max-width: 480px) {
+  .standing-grid { grid-template-columns: 1fr; }
+  .fund-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .perf-row { grid-template-columns: repeat(3, 1fr); }
+  .candle-chart { height: 260px; }
+  .seg button { font-size: 0.72rem; padding: 5px 7px; }
+  .summary-card { padding: 8px 10px; }
+  .summary-value { font-size: 1rem; }
+  .chart-controls select { font-size: 0.85rem; padding: 6px 10px; }
+}

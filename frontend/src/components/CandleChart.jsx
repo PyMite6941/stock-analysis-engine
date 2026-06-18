@@ -18,10 +18,6 @@ function lineData(dates, arr) {
   return out;
 }
 
-// IMPORTANT: intraday timestamps are encoded as the exchange's wall-clock time
-// (e.g. 09:30 = US market open) packed into a UTC epoch. Format them in UTC so
-// the axis shows market time and matches the candles + crosshair — never the
-// viewer's local timezone.
 function tickFmt(time) {
   if (typeof time === "number") {
     return new Date(time * 1000).toLocaleTimeString([], {
@@ -32,7 +28,6 @@ function tickFmt(time) {
   return d.toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-// Heikin-Ashi OHLC derived from the raw candles.
 function heikin(data) {
   const out = [];
   let pOpen, pClose;
@@ -49,9 +44,13 @@ function heikin(data) {
   return out;
 }
 
-const GREEN = "#26a69a", RED = "#ef5350";
+// Read a CSS variable from the document, falling back to a default.
+function cssVar(name, fallback) {
+  if (typeof document === "undefined") return fallback;
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
 
-export default function CandleChart({ data, toggles, settings }) {
+export default function CandleChart({ data, toggles, settings, drawing, drawLevels, onAddLevel }) {
   const ref = useRef(null);
   const { type = "area", logScale = false, grid = true, crosshair = true } = settings || {};
 
@@ -59,21 +58,28 @@ export default function CandleChart({ data, toggles, settings }) {
     if (!ref.current || !data?.dates?.length) return;
     const intraday = data.dates[0].includes(" ");
     const t = (i) => toTime(data.dates[i]);
-    const gridColor = grid ? "#161b22" : "rgba(0,0,0,0)";
+    const bg = cssVar("--bg", "#0d1117");
+    const panel = cssVar("--panel", "#161b22");
+    const border = cssVar("--border", "#30363d");
+    const text = cssVar("--muted", "#8b949e");
+    const gridColor = grid ? border : "rgba(0,0,0,0)";
+    const accent = cssVar("--accent", "#58a6ff");
 
     const chart = createChart(ref.current, {
       autoSize: true,
       layout: {
-        background: { color: "#0d1117" }, textColor: "#8b949e",
-        panes: { separatorColor: "#30363d", separatorHoverColor: "#444" },
+        background: { color: bg }, textColor: text,
+        panes: { separatorColor: border, separatorHoverColor: "#444" },
       },
       grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
       timeScale: {
-        borderColor: "#30363d", timeVisible: intraday, secondsVisible: false,
+        borderColor: border, timeVisible: intraday, secondsVisible: false,
         rightOffset: 2, minBarSpacing: 0.5, tickMarkFormatter: tickFmt,
       },
-      rightPriceScale: { borderColor: "#30363d", mode: logScale ? 1 : 0 },
+      rightPriceScale: { borderColor: border, mode: logScale ? 1 : 0 },
       crosshair: { mode: crosshair ? 1 : 2 },
+      handleScroll: { vertTouchDrag: true },
+      handleScale: { pinch: true, mouseWheel: true },
     });
 
     const ohlc = (i) => ({
@@ -86,22 +92,22 @@ export default function CandleChart({ data, toggles, settings }) {
     if (type === "candles" || type === "hollow") {
       const hollow = type === "hollow";
       const s = chart.addSeries(CandlestickSeries, {
-        upColor: hollow ? "rgba(0,0,0,0)" : GREEN, downColor: RED,
-        borderVisible: true, borderUpColor: GREEN, borderDownColor: RED,
-        wickUpColor: GREEN, wickDownColor: RED,
+        upColor: hollow ? "rgba(0,0,0,0)" : "#26a69a", downColor: "#ef5350",
+        borderVisible: true, borderUpColor: "#26a69a", borderDownColor: "#ef5350",
+        wickUpColor: "#26a69a", wickDownColor: "#ef5350",
       }, 0);
       s.setData(data.dates.map((d, i) => ohlc(i)));
     } else if (type === "bars") {
-      const s = chart.addSeries(BarSeries, { upColor: GREEN, downColor: RED }, 0);
+      const s = chart.addSeries(BarSeries, { upColor: "#26a69a", downColor: "#ef5350" }, 0);
       s.setData(data.dates.map((d, i) => ohlc(i)));
     } else if (type === "heikin") {
       const s = chart.addSeries(CandlestickSeries, {
-        upColor: GREEN, downColor: RED, borderVisible: false,
-        wickUpColor: GREEN, wickDownColor: RED,
+        upColor: "#26a69a", downColor: "#ef5350", borderVisible: false,
+        wickUpColor: "#26a69a", wickDownColor: "#ef5350",
       }, 0);
       s.setData(heikin(data).map((b) => ({ time: t(b.i), open: b.open, high: b.high, low: b.low, close: b.close })));
     } else {
-      const color = up ? GREEN : RED;
+      const color = up ? "#26a69a" : "#ef5350";
       const s = chart.addSeries(AreaSeries, {
         lineColor: color, lineWidth: 2,
         topColor: up ? "rgba(38,166,154,0.35)" : "rgba(239,83,80,0.35)",
@@ -142,11 +148,11 @@ export default function CandleChart({ data, toggles, settings }) {
     }
     if (toggles.rsi) {
       const rsi = chart.addSeries(LineSeries, {
-        color: "#e6edf3", lineWidth: 1.5, priceLineVisible: false,
+        color: text, lineWidth: 1.5, priceLineVisible: false,
       }, pane);
       rsi.setData(lineData(data.dates, ind.rsi));
-      rsi.createPriceLine({ price: 70, color: RED, lineStyle: 2, lineWidth: 1 });
-      rsi.createPriceLine({ price: 30, color: GREEN, lineStyle: 2, lineWidth: 1 });
+      rsi.createPriceLine({ price: 70, color: "#ef5350", lineStyle: 2, lineWidth: 1 });
+      rsi.createPriceLine({ price: 30, color: "#26a69a", lineStyle: 2, lineWidth: 1 });
       pane++;
     }
     if (toggles.macd) {
@@ -161,11 +167,43 @@ export default function CandleChart({ data, toggles, settings }) {
       pane++;
     }
 
+    // --- Drawing: horizontal price levels ---
+    if (drawLevels?.length) {
+      const mainPane = chart.panes()[0];
+      if (mainPane) {
+        const series = mainPane.getSeries().find(() => true);
+        drawLevels.forEach((lvl) => {
+          const series = chart.addSeries(LineSeries, {
+            color: lvl.color || "#f0b90b", lineWidth: 1,
+            priceLineVisible: false, lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, 0);
+          const dates = data.dates;
+          series.setData([
+            { time: toTime(dates[0]), value: lvl.price },
+            { time: toTime(dates[dates.length - 1]), value: lvl.price },
+          ]);
+        });
+      }
+    }
+
+    // --- Drawing mode: click to add level ---
+    if (drawing && onAddLevel) {
+      chart.subscribeClick((param) => {
+        if (!param.point) return;
+        const price = chart.priceScale("right").coordinateToPrice(param.point.y);
+        if (price != null) onAddLevel(parseFloat(price.toFixed(2)));
+      });
+    }
+
     const panes = chart.panes();
     if (panes[0]) panes[0].setHeight(320);
     chart.timeScale().fitContent();
     return () => chart.remove();
-  }, [data, toggles, type, logScale, grid, crosshair]);
+  }, [data, toggles, type, logScale, grid, crosshair, drawing, drawLevels, onAddLevel]);
 
-  return <div ref={ref} className="candle-chart" />;
+  return (
+    <div ref={ref} className={`candle-chart ${drawing ? "draw-mode" : ""}`}
+         style={{ cursor: drawing ? "crosshair" : "" }} />
+  );
 }

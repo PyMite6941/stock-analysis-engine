@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { analyze, downloadCsvUrl } from "../api.js";
+import { useState, useEffect, useRef } from "react";
+import { analyze, quotes, downloadCsvUrl } from "../api.js";
 import QuoteTable from "./QuoteTable.jsx";
 import ChartSection from "./ChartSection.jsx";
 import FundamentalsPanel from "./FundamentalsPanel.jsx";
@@ -11,10 +11,11 @@ import ChatPanel from "./ChatPanel.jsx";
 const PERIODS = ["1mo", "3mo", "6mo", "1y", "2y", "5y"];
 const LS_SYMBOLS = "sae:symbols";
 const LS_FOCUSED = "sae:focused";
+const POLL_INTERVAL = 30000;
 
 // The full analysis page. `initialSymbols` (from a home-page search) seeds the
 // watchlist; otherwise it falls back to the saved/default list.
-export default function AnalysisView({ initialSymbols, onHome }) {
+export default function AnalysisView({ initialSymbols, onHome, theme, toggleTheme }) {
   const [symbolsInput, setSymbolsInput] = useState(
     () => initialSymbols || localStorage.getItem(LS_SYMBOLS) || "AAPL, MSFT, NVDA"
   );
@@ -23,6 +24,9 @@ export default function AnalysisView({ initialSymbols, onHome }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [focused, setFocused] = useState(null);
+  const [lastPoll, setLastPoll] = useState(null);
+  const dataRef = useRef(data);
+  dataRef.current = data;
 
   const symbols = symbolsInput
     .split(",")
@@ -52,6 +56,30 @@ export default function AnalysisView({ initialSymbols, onHome }) {
     if (data && focused && !symbols.includes(focused)) setFocused(symbols[0] ?? null);
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  function downloadJson() {
+    if (!data) return;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "analysis.json";
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  }
+
+  // Live price polling — refresh quotes every 30s without full re-analysis.
+  useEffect(() => {
+    if (!data) return;
+    const id = setInterval(async () => {
+      try {
+        const fresh = await quotes(symbols);
+        if (fresh.quotes && dataRef.current) {
+          setData((prev) => prev ? { ...prev, quotes: fresh.quotes } : prev);
+          setLastPoll(new Date());
+        }
+      } catch { /* silently retry next cycle */ }
+    }, POLL_INTERVAL);
+    return () => clearInterval(id);
+  }, [data, symbols]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="app">
       <header className="app-header">
@@ -59,7 +87,12 @@ export default function AnalysisView({ initialSymbols, onHome }) {
           <h1>📈 Stock Analysis Engine</h1>
           <p className="sub">Candlesticks · indicators · AI analyst</p>
         </div>
-        <button className="ghost" onClick={onHome}>← Markets</button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button className="theme-btn" onClick={toggleTheme} title="Toggle theme">
+            {theme === "dark" ? "☀️" : "🌙"}
+          </button>
+          <button className="ghost" onClick={onHome}>← Markets</button>
+        </div>
       </header>
 
       <section className="controls">
@@ -76,9 +109,16 @@ export default function AnalysisView({ initialSymbols, onHome }) {
           {loading ? "Analyzing…" : "Analyze"}
         </button>
         {data && (
-          <a className="download" href={downloadCsvUrl(symbols, period)}>⬇ Download CSV</a>
+          <>
+            <a className="download" href={downloadCsvUrl(symbols, period)}>⬇ CSV</a>
+            <button className="ghost" onClick={downloadJson}>⬇ JSON</button>
+            <button className="ghost" onClick={() => window.print()}>🖨 PDF</button>
+          </>
         )}
       </section>
+      {data && <p className="muted" style={{ fontSize: "0.78rem", margin: "4px 0 0" }}>
+        Quotes refresh every 30s{lastPoll ? ` · updated ${lastPoll.toLocaleTimeString()}` : ""}
+      </p>}
 
       {error && <div className="error">⚠ {error}</div>}
 
@@ -107,7 +147,20 @@ export default function AnalysisView({ initialSymbols, onHome }) {
         </>
       )}
 
-      {!data && loading && <div className="empty">Loading…</div>}
+      {!data && loading && (
+        <div className="layout" style={{ marginTop: 24 }}>
+          <div className="main-col">
+            <div className="skeleton-summary">
+              {[1,2,3,4].map((i) => <div key={i} className="skeleton" />)}
+            </div>
+            <div className="skeleton skeleton-chart" />
+            <div className="skeleton skeleton-table" />
+          </div>
+          <aside className="side-col">
+            <div className="skeleton" style={{ height: 400, borderRadius: 12 }} />
+          </aside>
+        </div>
+      )}
     </div>
   );
 }
