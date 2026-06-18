@@ -536,9 +536,49 @@ class FinnhubProvider:
         )
 
 
+class HybridProvider(YFinanceProvider):
+    """Free real-time quotes from Finnhub's free tier + everything else (history,
+    fundamentals, statistics, insights) from yfinance.
+
+    Finnhub's free plan returns *real-time* US-stock last prices (no 15-min
+    delay), and its API is reliable from cloud IPs where yfinance sometimes gets
+    throttled. Set DATA_PROVIDER=hybrid and a free FINNHUB_API_KEY to enable.
+    Index symbols (^GSPC, …) and any Finnhub miss fall back to yfinance.
+    """
+
+    name = "hybrid"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._fh = FinnhubProvider()  # raises if FINNHUB_API_KEY missing
+
+    def _quote_one(self, sym: str) -> Quote:
+        sym = sym.upper()
+        try:
+            q = self._fh._get("/quote", symbol=sym)
+            price, prev = q.get("c") or 0.0, q.get("pc") or 0.0
+            if not price:  # Finnhub has no data (e.g. an index) — fall back
+                return super()._quote_one(sym)
+            meta = self._info(sym)  # name / PE / market cap from yfinance (cached)
+            change = price - prev
+            return Quote(
+                symbol=sym,
+                name=meta.get("shortName") or meta.get("longName") or sym,
+                price=round(price, 4),
+                change=round(change, 4),
+                change_pct=round(change / prev * 100, 4) if prev else 0.0,
+                currency=meta.get("currency", "USD"),
+                pe=_safe_float(meta.get("trailingPE")),
+                market_cap=_safe_float(meta.get("marketCap")),
+            )
+        except Exception:
+            return super()._quote_one(sym)
+
+
 _PROVIDERS = {
     "yfinance": YFinanceProvider,
     "finnhub": FinnhubProvider,
+    "hybrid": HybridProvider,
 }
 
 _provider_instance = None
