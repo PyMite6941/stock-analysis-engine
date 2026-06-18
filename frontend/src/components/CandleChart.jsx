@@ -50,7 +50,7 @@ function cssVar(name, fallback) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 }
 
-export default function CandleChart({ data, toggles, settings, drawing, drawLevels, onAddLevel }) {
+export default function CandleChart({ data, toggles, settings, drawing, drawLevels, onAddLevel, zoomApi }) {
   const ref = useRef(null);
   const { type = "area", logScale = false, grid = true, crosshair = true } = settings || {};
 
@@ -194,6 +194,15 @@ export default function CandleChart({ data, toggles, settings, drawing, drawLeve
         const price = chart.priceScale("right").coordinateToPrice(param.point.y);
         if (price != null) onAddLevel(parseFloat(price.toFixed(2)));
       });
+    }
+
+    // Zoom API — proportional zoom relative to chart center
+    if (zoomApi) {
+      zoomApi.current = {
+        zoomIn: () => { chart.timeScale().zoom(1.3); },
+        zoomOut: () => { chart.timeScale().zoom(0.7); },
+        resetZoom: () => { chart.timeScale().fitContent(); },
+      };
     }
 
     const panes = chart.panes();

@@ -7,7 +7,7 @@ import StatsCompare from "./StatsCompare.jsx";
 const TIMEFRAMES = [
   ["1D", "1d", "5m"], ["5D", "5d", "15m"], ["1M", "1mo", "30m"],
   ["3M", "3mo", "3h"], ["6M", "6mo", "3h"], ["1Y", "1y", "1d"],
-  ["2Y", "2y", "1wk"], ["5Y", "5y", "1wk"],
+  ["2Y", "2y", "1d"], ["5Y", "5y", "1wk"],
 ];
 const INDICATORS = [
   ["sma20", "SMA 20"], ["sma50", "SMA 50"], ["sma200", "SMA 200"],
@@ -100,6 +100,7 @@ export default function ChartSection({ symbol, onSymbolChange, symbols }) {
   }, [symbol, period, interval, compare]);
 
   const toggle = (key) => setToggles((t) => ({ ...t, [key]: !t[key] }));
+  const zoomApi = useRef({ zoomIn: () => {}, zoomOut: () => {}, resetZoom: () => {} });
 
   // Touch swipe — cycle timeframe on horizontal swipe
   const handleTouchStart = (e) => { touchX.current = e.touches[0].clientX; };
@@ -174,6 +175,13 @@ export default function ChartSection({ symbol, onSymbolChange, symbols }) {
                 title={symbols.length < 2 ? "Add 2+ tickers to compare" : ""}>
           {compare ? "← Single" : "⇄ Compare"}
         </button>
+        {!compare && (
+          <span className="seg" style={{ marginLeft: 4 }}>
+            <button onClick={() => zoomApi.current.zoomOut()} title="Zoom out">−</button>
+            <button onClick={() => zoomApi.current.resetZoom()} title="Reset zoom">⟲</button>
+            <button onClick={() => zoomApi.current.zoomIn()} title="Zoom in">+</button>
+          </span>
+        )}
         <button className="ghost" onClick={toggleFullscreen} title="Fullscreen">
           {fullscreen ? "⊠" : "⛶"}
         </button>
@@ -205,6 +213,7 @@ export default function ChartSection({ symbol, onSymbolChange, symbols }) {
             <CandleChart data={data} toggles={toggles}
                          settings={{ type: chartType, ...opts }}
                          drawing={drawing} drawLevels={drawLevels}
+                         zoomApi={zoomApi}
                          onAddLevel={(price) => setDrawLevels((prev) => {
                            const exists = prev.some((l) => Math.abs(l.price - price) < 0.01);
                            return exists ? prev : [...prev, { price, color: "#f0b90b" }];
