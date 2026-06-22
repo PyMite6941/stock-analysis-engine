@@ -395,3 +395,8 @@ body, .app, .home, .standing-card, .summary-card, .chart-section,
   .summary-value { font-size: 1rem; }
   .chart-controls select { font-size: 0.85rem; padding: 6px 10px; }
 }
+
+/* live (websocket) indicator */
+.live-dot { color: #3fb950; font-weight: 700; margin-right: 4px;
+  animation: livepulse 1.4s ease-in-out infinite; }
+@keyframes livepulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }

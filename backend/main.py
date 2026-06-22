@@ -99,6 +99,19 @@ def _parse_symbols(symbols: str) -> list[str]:
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+@app.get("/api/realtime-token")
+def realtime_token():
+    """Token for the browser's Finnhub WebSocket live ticker (free tier).
+
+    Served at runtime (not baked into the JS bundle) so it can be rotated and so
+    the client degrades to 30s polling when no token is set. Prefer a dedicated
+    FINNHUB_WS_TOKEN (a throwaway free key) since it's exposed to the browser;
+    falls back to FINNHUB_API_KEY.
+    """
+    import os
+    return {"token": os.environ.get("FINNHUB_WS_TOKEN") or os.environ.get("FINNHUB_API_KEY") or None}
+
+
 @app.get("/api/health")
 def health():
     # Report the configured provider from env WITHOUT instantiating it — so this

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { analyze, quotes, downloadCsvUrl } from "../api.js";
+import { useRealtime } from "../useRealtime.js";
 import QuoteTable from "./QuoteTable.jsx";
 import ChartSection from "./ChartSection.jsx";
 import FundamentalsPanel from "./FundamentalsPanel.jsx";
@@ -32,6 +33,22 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
     .split(",")
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean);
+
+  // Free real-time prices over Finnhub's WebSocket (client-side).
+  const { prices: livePrices, connected: live } = useRealtime(symbols);
+
+  // Merge live trade prices onto the last fetched quotes (prev close stays fixed).
+  const displayQuotes = (data?.quotes || []).map((q) => {
+    const tick = livePrices[q.symbol];
+    if (!tick) return q;
+    const prevClose = q.price - q.change;
+    const change = tick.price - prevClose;
+    return {
+      ...q, price: tick.price, change,
+      change_pct: prevClose ? (change / prevClose) * 100 : q.change_pct,
+      _live: true,
+    };
+  });
 
   async function runAnalysis() {
     if (!symbols.length) return;
@@ -117,7 +134,9 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
         )}
       </section>
       {data && <p className="muted" style={{ fontSize: "0.78rem", margin: "4px 0 0" }}>
-        Quotes refresh every 30s{lastPoll ? ` · updated ${lastPoll.toLocaleTimeString()}` : ""}
+        {live
+          ? <><span className="live-dot">● LIVE</span> real-time prices (Finnhub WebSocket)</>
+          : <>Quotes refresh every 30s{lastPoll ? ` · updated ${lastPoll.toLocaleTimeString()}` : ""}</>}
       </p>}
 
       {error && <div className="error">⚠ {error}</div>}
@@ -134,7 +153,7 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
               {focused && <StatisticsPanel symbol={focused} />}
               {focused && <InsightsPanel symbol={focused} />}
               <QuoteTable
-                quotes={data.quotes}
+                quotes={displayQuotes}
                 analyses={data.analyses}
                 focused={focused}
                 onSelect={setFocused}
