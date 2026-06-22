@@ -141,6 +141,11 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
 
       {error && <div className="error">⚠ {error}</div>}
 
+      <div className="disclaimer">
+        <strong>⚠</strong>
+        <span>Not financial advice. Past performance does not guarantee future results.
+        Data may be delayed. Verify all information before making investment decisions.</span>
+      </div>
       {data && (
         <>
           <SummaryBar summary={data.summary} />

@@ -1,11 +1,30 @@
 // Thin client for the FastAPI backend. All calls go through Vite's /api proxy.
 
+const AUTH_KEY = "sae:api_key";
+
+function headers(extra = {}) {
+  const key = sessionStorage.getItem(AUTH_KEY);
+  if (key) extra["Authorization"] = `Bearer ${key}`;
+  return { ...extra };
+}
+
 async function post(path, body) {
   const r = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: headers({ "Content-Type": "application/json" }),
     body: JSON.stringify(body),
   });
+  if (r.status === 401) { sessionStorage.removeItem(AUTH_KEY); window.location.reload(); }
+  if (!r.ok) {
+    const detail = await r.json().catch(() => ({}));
+    throw new Error(detail.detail || `Request failed (${r.status})`);
+  }
+  return r.json();
+}
+
+async function get(path) {
+  const r = await fetch(path, { headers: headers() });
+  if (r.status === 401) { sessionStorage.removeItem(AUTH_KEY); window.location.reload(); }
   if (!r.ok) {
     const detail = await r.json().catch(() => ({}));
     throw new Error(detail.detail || `Request failed (${r.status})`);
@@ -19,57 +38,34 @@ export function analyze(symbols, period = "6mo") {
 
 export async function quotes(symbols) {
   const q = encodeURIComponent(symbols.join(","));
-  const r = await fetch(`/api/quotes?symbols=${q}`);
-  if (!r.ok) {
-    const detail = await r.json().catch(() => ({}));
-    throw new Error(detail.detail || `Request failed (${r.status})`);
-  }
-  return r.json();
+  return get(`/api/quotes?symbols=${q}`);
 }
 
 export async function insights(symbol) {
-  const r = await fetch(`/api/insights?symbol=${encodeURIComponent(symbol)}`);
-  if (!r.ok) {
-    const detail = await r.json().catch(() => ({}));
-    throw new Error(detail.detail || `Request failed (${r.status})`);
-  }
-  return r.json();
+  return get(`/api/insights?symbol=${encodeURIComponent(symbol)}`);
 }
 
 export async function statistics(symbol) {
-  const r = await fetch(`/api/statistics?symbol=${encodeURIComponent(symbol)}`);
-  if (!r.ok) {
-    const detail = await r.json().catch(() => ({}));
-    throw new Error(detail.detail || `Request failed (${r.status})`);
-  }
-  return r.json();
+  return get(`/api/statistics?symbol=${encodeURIComponent(symbol)}`);
 }
 
 export async function fundamentals(symbol) {
-  const r = await fetch(`/api/fundamentals?symbol=${encodeURIComponent(symbol)}`);
-  if (!r.ok) {
-    const detail = await r.json().catch(() => ({}));
-    throw new Error(detail.detail || `Request failed (${r.status})`);
-  }
-  return r.json();
+  return get(`/api/fundamentals?symbol=${encodeURIComponent(symbol)}`);
 }
 
 export async function candles(symbol, period = "6mo", interval = "1d") {
   const q = new URLSearchParams({ symbol, period, interval });
-  const r = await fetch(`/api/candles?${q}`);
-  if (!r.ok) {
-    const detail = await r.json().catch(() => ({}));
-    throw new Error(detail.detail || `Request failed (${r.status})`);
-  }
-  return r.json();
+  return get(`/api/candles?${q}`);
 }
 
 export function chat(messages, symbols, period = "6mo") {
   return post("/api/chat", { messages, symbols, period });
 }
 
-// Download is a plain GET so the browser handles the file save natively.
 export function downloadCsvUrl(symbols, period = "6mo") {
   const q = encodeURIComponent(symbols.join(","));
-  return `/api/download.csv?symbols=${q}&period=${period}`;
+  const url = `/api/download.csv?symbols=${q}&period=${period}`;
+  const key = sessionStorage.getItem(AUTH_KEY);
+  if (key) return url + `&api_key=${key}`;
+  return url;
 }

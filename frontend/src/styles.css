@@ -243,6 +243,29 @@ header .sub { color: var(--muted); margin: 4px 0 20px; }
   border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
 .chat-input button:disabled { opacity: 0.5; }
 
+/* ===== Login Page ===== */
+.login-page { display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; background: var(--bg); }
+.login-card { text-align: center; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 16px; padding: 48px 40px; max-width: 420px; width: 90%; }
+.login-card .logo-mark { font-size: 3rem; }
+.login-card h1 { font-size: 1.6rem; margin: 8px 0 4px; }
+.login-card .tagline { color: var(--muted); margin-bottom: 24px; font-size: 0.95rem; }
+.login-form { display: flex; flex-direction: column; gap: 12px; }
+.login-form input { padding: 14px 16px; font-size: 1.05rem; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 10px; color: var(--text); text-align: center; }
+.login-form input:focus { outline: none; border-color: var(--accent); }
+.login-form button { padding: 14px; font-size: 1rem; font-weight: 600;
+  background: var(--accent); color: #0d1117; border: none; border-radius: 10px; cursor: pointer; }
+.login-form button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ===== Compliance Banner ===== */
+.disclaimer { background: #3d1f00; border: 1px solid #bb8009; border-radius: 8px;
+  padding: 10px 14px; font-size: 0.78rem; color: #d29922; margin: 12px 0;
+  display: flex; gap: 8px; align-items: flex-start; }
+.disclaimer strong { white-space: nowrap; }
+.light .disclaimer { background: #fff8e8; border-color: #d4a72c; color: #7a5c00; }
+
 /* ===== Print Styles ===== */
 @media print {
   body { background: #fff; color: #000; }

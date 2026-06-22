@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 from core import data, metrics, indicators
 from backend import ai
+from backend.middleware import SecurityAndAuthMiddleware, logger
 
 app = FastAPI(title="Stock Analysis Engine", version="0.1.0")
 
@@ -37,6 +38,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SecurityAndAuthMiddleware)
 
 
 @app.middleware("http")
