@@ -70,6 +70,13 @@ streamlit run offline/app.py
 | POST | `/api/portfolio/import` | parse an uploaded holdings CSV/XLSX |
 | GET  | `/api/download.csv?symbols=...&period=6mo` | CSV export |
 | GET  | `/api/export.xlsx?symbols=...&period=6mo` | multi-sheet workbook |
+| GET  | `/api/backtest?symbol=AAPL&horizon=21` | did the signal score ever predict anything? |
+| POST | `/api/portfolio/income` | dividend projection, yield on cost, ex-div dates |
+| POST | `/api/portfolio/correlation` | correlation matrix + effective number of bets |
+| POST | `/api/portfolio/forecast` | probability cone for the whole book |
+| POST | `/api/portfolio/sell` | match a sale against open lots (FIFO/LIFO/specific) |
+| POST | `/api/portfolio/realized` | realised gains, short vs long term, per year |
+| POST | `/api/portfolio/realized/export` | realised gains as CSV or XLSX |
 
 A ticker that doesn't exist returns **404** with
 `{"error": "symbol_not_found", "detail": "Stock/ETF not found: XYZ..."}` rather
@@ -103,6 +110,65 @@ and deliberately separates two numbers people conflate:
 
 These regularly disagree in sign. A lot opened partway through the window is
 measured from its purchase date and flagged, not credited with the whole move.
+
+## Buying and selling
+
+A position records a ticker, share count, price paid and — optionally — **when**,
+as a date or a date and clock time (`2026-09-16 09:45`). The time matters for
+intraday trades: buy and sell inside one session and the holding period is
+measured in minutes, not days, and the trade is tagged as a day trade.
+
+Selling matches against specific lots, which is where the real accounting lives:
+
+| Method | Picks |
+|---|---|
+| **FIFO** (default) | oldest lots first — what brokers assume if you don't say otherwise |
+| **LIFO** | newest lots first |
+| **Specific** | lots you name, the only way to deliberately harvest a loss |
+
+Realised gains are split into **short-term** and **long-term** (over one year),
+because that split drives the tax bill, and open lots within 45 days of crossing
+into long-term treatment get a countdown. A personal record, not a tax document —
+your broker's 1099 is the authority and may apply wash-sale rules this does not.
+
+## Does the signal actually work?
+
+`/api/backtest` scores every historical bar **point-in-time** — only data
+available on that day feeds the score — then measures the forward return, buckets
+the results by score band, and reports one of: `predictive`, `weak-signal`,
+`no-edge`, `inverted`, `insufficient-data`.
+
+It reports the bad answers just as prominently as the good ones. On several large
+caps the honest verdict is `no-edge` or `inverted`, and the UI says so. Two
+guards keep it honest:
+
+- **No lookahead.** Every indicator is a causal rolling series, verified by a test
+  that scores bar *i* from the full series and again from a series truncated at
+  *i*, and requires identical results.
+- **Overlapping windows.** Consecutive days share most of their forward window, so
+  the raw bar count massively overstates the evidence. `independent_samples`
+  (n ÷ horizon) is what's reported, and thin samples are labelled unreliable.
+
+## Diversification
+
+`/api/portfolio/correlation` returns the pairwise correlation matrix plus
+`effective_bets` — how many genuinely independent positions the book behaves
+like. It separates the two causes of a concentrated book, because they need
+different fixes:
+
+- **concentration** — one position is most of the money
+- **correlation** — the holdings move together
+
+A book of four names with an average correlation of 0.09 can still be 1.25
+effective bets if 77% of it sits in one ticker, and the verdict says exactly that
+rather than quoting the correlation as if it were the problem.
+
+## Alerts
+
+Price, percentage-move, per-position and whole-portfolio alerts, evaluated
+client-side against quotes the page already polls. No server, no account, nothing
+uploaded — and therefore **they only fire while a tab is open**. That limitation
+is stated in the UI rather than buried.
 
 ## Deploy (Vercel)
 

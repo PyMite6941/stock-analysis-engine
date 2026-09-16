@@ -1,13 +1,31 @@
 import { useEffect, useRef, useState } from "react";
-import { exportPositions, importPositions, portfolio as fetchPortfolio, saveBlob } from "../api.js";
+import { exportPositions, importPositions, portfolio as fetchPortfolio,
+         saveBlob, sellPosition } from "../api.js";
 import { num, pct } from "../format.js";
 import {
   addPosition, csvToPositions, loadPositions, mergePositions, positionsToCsv,
-  removePosition, updatePosition,
+  removePosition, replacePositions, updatePosition,
 } from "../positions.js";
 import Explain from "./Explain.jsx";
 
-const BLANK = { symbol: "", shares: "", cost_basis: "", opened: "", note: "" };
+const BLANK = { symbol: "", shares: "", cost_basis: "", opened: "",
+                openedTime: "", note: "" };
+const SELL_BLANK = { symbol: "", shares: "", price: "", date: "", time: "",
+                     method: "fifo" };
+
+// Combine the date and optional time inputs into one stored stamp.
+// Day traders open and close inside a session, so the clock time is what
+// makes the holding period meaningful at all.
+function stamp(date, time) {
+  if (!date) return null;
+  return time ? `${date} ${time}` : date;
+}
+
+// Split a stored stamp back into the two inputs.
+function unstamp(value) {
+  const s = String(value || "");
+  return { date: s.slice(0, 10), time: s.length > 10 ? s.slice(11, 16) : "" };
+}
 
 // "I bought 400 NVDA at $178.50" — entered here, kept in localStorage, marked to
 // market against live quotes, and exportable as CSV/XLSX.
@@ -17,13 +35,15 @@ const BLANK = { symbol: "", shares: "", cost_basis: "", opened: "", note: "" };
 // is the one way to lose it.
 export default function PositionsPanel({ beginner = false, livePrices = {},
                                          onSymbolsChange, onSelect, positions,
-                                         setPositions }) {
+                                         setPositions, onSold }) {
   const [valued, setValued] = useState(null);
   const [form, setForm] = useState(BLANK);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [sell, setSell] = useState(null);          // SELL_BLANK when open
+  const [sellBusy, setSellBusy] = useState(false);
   const fileRef = useRef(null);
 
   // Re-price whenever the list changes. The server does the maths so the numbers
@@ -53,7 +73,7 @@ export default function PositionsPanel({ beginner = false, livePrices = {},
       symbol: form.symbol.trim().toUpperCase(),
       shares: Number(form.shares),
       cost_basis: Number(form.cost_basis),
-      opened: form.opened || null,
+      opened: stamp(form.opened, form.openedTime),
       note: form.note?.trim() || null,
     };
     if (!entry.symbol) return setError("Enter a ticker symbol.");
@@ -73,10 +93,11 @@ export default function PositionsPanel({ beginner = false, livePrices = {},
 
   function startEdit(row) {
     setEditing(row.id);
+    const when = unstamp(row.opened);
     setForm({
       symbol: row.symbol, shares: String(row.shares),
-      cost_basis: String(row.cost_basis), opened: row.opened || "",
-      note: row.note || "",
+      cost_basis: String(row.cost_basis), opened: when.date,
+      openedTime: when.time, note: row.note || "",
     });
     setError(null);
   }
@@ -84,6 +105,57 @@ export default function PositionsPanel({ beginner = false, livePrices = {},
   function remove(row) {
     setPositions(removePosition(positions, row.id));
     if (editing === row.id) { setEditing(null); setForm(BLANK); }
+  }
+
+  function startSell(row) {
+    const now = new Date();
+    setError(null);
+    setSell({
+      ...SELL_BLANK,
+      symbol: row.symbol,
+      shares: String(row.shares),
+      price: row.price ? String(row.price) : "",
+      date: now.toISOString().slice(0, 10),
+      // Prefill the time only when the lot itself was timed — otherwise the
+      // sale looks precise when the buy wasn't.
+      time: row.opened && String(row.opened).length > 10
+        ? now.toTimeString().slice(0, 5) : "",
+    });
+  }
+
+  async function confirmSell(e) {
+    e.preventDefault();
+    const shares = Number(sell.shares);
+    const price = Number(sell.price);
+    if (!Number.isFinite(shares) || shares <= 0) return setError("How many shares?");
+    if (!Number.isFinite(price) || price <= 0) return setError("Sold at what price?");
+
+    setSellBusy(true);
+    setError(null);
+    try {
+      const res = await sellPosition({
+        positions,
+        symbol: sell.symbol,
+        shares,
+        price,
+        soldOn: stamp(sell.date, sell.time),
+        method: sell.method,
+      });
+      // The server returns both the realised rows and the reduced lot list, so
+      // the two stores stay consistent with a single round trip.
+      setPositions(replacePositions(res.remaining_lots));
+      onSold?.(res.realized);
+      const total = res.realized.reduce((a, r) => a + r.pnl, 0);
+      flash(`Sold ${num(shares, 4)} ${sell.symbol} — realised ${total >= 0 ? "+" : "−"}$${num(Math.abs(total))}.`);
+      if (res.unmatched > 0) {
+        setError(`Only ${num(shares - res.unmatched, 4)} shares were held; ${num(res.unmatched, 4)} could not be matched.`);
+      }
+      setSell(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSellBusy(false);
+    }
   }
 
   async function doExport(format) {
@@ -237,6 +309,8 @@ export default function PositionsPanel({ beginner = false, livePrices = {},
                       {r.symbol}
                     </button>
                     {r.opened && <div className="muted tiny">{r.opened}</div>}
+                    {r.note && <div className="muted tiny" title={r.note}>
+                      {r.note.length > 18 ? `${r.note.slice(0, 18)}…` : r.note}</div>}
                   </td>
                   <td>{num(r.shares, 4)}</td>
                   <td>${num(r.cost_basis)}</td>
@@ -260,6 +334,8 @@ export default function PositionsPanel({ beginner = false, livePrices = {},
                   </td>
                   <td className="muted">{r.weight_pct ? pct(r.weight_pct) : "—"}</td>
                   <td className="row-actions">
+                    <button className="icon sell" title="Record a sale"
+                            onClick={() => startSell(r)}>Sell</button>
                     <button className="icon" title="Edit" onClick={() => startEdit(r)}>✎</button>
                     <button className="icon danger" title="Remove"
                             onClick={() => remove(r)}>✕</button>
@@ -302,6 +378,55 @@ export default function PositionsPanel({ beginner = false, livePrices = {},
         </>
       )}
 
+      {sell && (
+        <form className="sell-form" onSubmit={confirmSell}>
+          <h3 className="sub-head">Record a sale — {sell.symbol}</h3>
+          <div className="pos-fields">
+            <label>
+              <span>Shares sold</span>
+              <input type="number" step="any" min="0" autoFocus value={sell.shares}
+                     onChange={(e) => setSell({ ...sell, shares: e.target.value })} />
+            </label>
+            <label>
+              <span>Sold at</span>
+              <input type="number" step="any" min="0" value={sell.price}
+                     onChange={(e) => setSell({ ...sell, price: e.target.value })} />
+            </label>
+            <label>
+              <span>Date sold</span>
+              <input type="date" value={sell.date}
+                     onChange={(e) => setSell({ ...sell, date: e.target.value })} />
+            </label>
+            <label>
+              <span>Time <em>(optional)</em></span>
+              <input type="time" value={sell.time} disabled={!sell.date}
+                     onChange={(e) => setSell({ ...sell, time: e.target.value })} />
+            </label>
+            <label>
+              <span>Which lots</span>
+              <select value={sell.method}
+                      onChange={(e) => setSell({ ...sell, method: e.target.value })}>
+                <option value="fifo">Oldest first (FIFO)</option>
+                <option value="lifo">Newest first (LIFO)</option>
+              </select>
+            </label>
+            <div className="pos-submit">
+              <button type="submit" disabled={sellBusy}>
+                {sellBusy ? "Recording…" : "Record sale"}
+              </button>
+              <button type="button" className="ghost"
+                      onClick={() => { setSell(null); setError(null); }}>Cancel</button>
+            </div>
+          </div>
+          {sell.shares && sell.price && (
+            <p className="pos-preview">
+              Proceeds <strong>${num(Number(sell.shares) * Number(sell.price))}</strong>.
+              {" "}Which lots you pick changes the gain and the tax treatment.
+            </p>
+          )}
+        </form>
+      )}
+
       <form className="position-form" onSubmit={submit}>
         <h3 className="sub-head">{editing ? "Edit position" : "Add a position"}</h3>
         <div className="pos-fields">
@@ -322,9 +447,15 @@ export default function PositionsPanel({ beginner = false, livePrices = {},
                    onChange={(e) => setForm({ ...form, cost_basis: e.target.value })} />
           </label>
           <label>
-            <span>Date <em>(optional)</em></span>
+            <span>Date bought <em>(optional)</em></span>
             <input type="date" value={form.opened}
                    onChange={(e) => setForm({ ...form, opened: e.target.value })} />
+          </label>
+          <label>
+            <span>Time <em>(optional)</em></span>
+            <input type="time" value={form.openedTime} disabled={!form.opened}
+                   title="For intraday trades — lets the holding period be exact"
+                   onChange={(e) => setForm({ ...form, openedTime: e.target.value })} />
           </label>
           <label className="grow">
             <span>Note <em>(optional)</em></span>

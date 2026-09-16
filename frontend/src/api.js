@@ -163,3 +163,37 @@ export function downloadXlsxUrl(symbols, period = "6mo") {
   const q = encodeURIComponent(symbols.join(","));
   return withKey(`/api/export.xlsx?symbols=${q}&period=${period}`);
 }
+
+// --- new analytics -------------------------------------------------------
+export function backtest(symbol, period = "5y", horizon = 21) {
+  const q = new URLSearchParams({ symbol, period, horizon });
+  return get(`/api/backtest?${q}`);
+}
+
+export function portfolioIncome(positions, period = "1y") {
+  return post("/api/portfolio/income", { positions, period });
+}
+
+export function portfolioCorrelation(positions, period = "1y") {
+  return post("/api/portfolio/correlation", { positions, period });
+}
+
+export function portfolioForecast(positions, period = "2y") {
+  return post("/api/portfolio/forecast", { positions, period });
+}
+
+export function sellPosition({ positions, symbol, shares, price, soldOn, method, lotIds }) {
+  return post("/api/portfolio/sell", {
+    positions, symbol, shares, price,
+    sold_on: soldOn || null, method: method || "fifo", lot_ids: lotIds || [],
+  });
+}
+
+export function realizedGains(sales, positions = [], year = null) {
+  return post("/api/portfolio/realized", { sales, positions, year });
+}
+
+export async function exportRealized(sales, format = "csv") {
+  const blob = await postBlob("/api/portfolio/realized/export", { sales, format });
+  saveBlob(blob, `realized_gains.${format === "xlsx" ? "xlsx" : "csv"}`);
+}

@@ -191,18 +191,41 @@ def signal_score(close: list[float], volume: list[float] | None = None) -> dict:
     """
     if len(close) < 30:
         return {}
+    return signal_at(indicators.compute_all(close), close, volume, len(close) - 1)
 
-    ind = indicators.compute_all(close)
-    last = close[-1]
+
+def signal_at(ind: dict, close: list[float], volume: list[float] | None,
+              i: int) -> dict:
+    """Score the series AS OF index `i`, using only data available by then.
+
+    Split out from signal_score so the backtester can walk history without
+    recomputing indicators on every bar. Every indicator in `ind` is a causal
+    rolling series — the value at index i depends only on close[:i+1] — so
+    reading position i is genuinely point-in-time and not lookahead.
+    """
+    if i < 29 or i >= len(close):
+        return {}
+
+    last = close[i]
     factors: dict[str, dict] = {}
+
+    def at(key):
+        """Latest non-None value of `key` at or before bar i."""
+        series = ind.get(key)
+        if not series:
+            return None
+        for j in range(min(i, len(series) - 1), -1, -1):
+            if series[j] is not None:
+                return series[j]
+        return None
 
     def add(key, value, note):
         factors[key] = {"score": round(clamp(value), 3),
                         "weight": _WEIGHTS[key], "note": note}
 
     # -- trend: price relative to SMA50, adjusted by the 50/200 relationship.
-    sma50 = _last(ind.get("sma50"))
-    sma200 = _last(ind.get("sma200"))
+    sma50 = at("sma50")
+    sma200 = at("sma200")
     if sma50:
         t = clamp((last / sma50 - 1) * 10)  # +/-10% from SMA50 saturates
         if sma200:
@@ -215,20 +238,20 @@ def signal_score(close: list[float], volume: list[float] | None = None) -> dict:
         add("trend", t, note)
 
     # -- momentum: RSI, centred on 50.
-    rsi = _last(ind.get("rsi"))
+    rsi = at("rsi")
     if rsi is not None:
         state = "overbought" if rsi > 70 else "oversold" if rsi < 30 else "neutral range"
         add("momentum", (rsi - 50) / 30.0, f"RSI {rsi:.1f} — {state}")
 
     # -- macd: histogram scaled by price so it compares across symbols.
-    hist = _last(ind.get("macd_hist"))
+    hist = at("macd_hist")
     if hist is not None and last:
         add("macd", (hist / last) * 200,
             f"MACD histogram {hist:+.3f} — "
             f"{'bullish' if hist > 0 else 'bearish'} crossover state")
 
     # -- mean reversion: %B inside the Bollinger band, deliberately inverted.
-    up, lo = _last(ind.get("bb_upper")), _last(ind.get("bb_lower"))
+    up, lo = at("bb_upper"), at("bb_lower")
     if up and lo and up > lo:
         pct_b = (last - lo) / (up - lo)
         stretch = ("stretched high" if pct_b > 0.8
@@ -237,9 +260,10 @@ def signal_score(close: list[float], volume: list[float] | None = None) -> dict:
             f"{pct_b * 100:.0f}% of the way up the Bollinger band — {stretch}")
 
     # -- volume: is recent activity confirming the recent move?
-    if volume and len(volume) >= 30:
-        recent, base = mean(volume[-5:]), mean(volume[-30:])
-        direction = 1.0 if close[-1] >= close[-6] else -1.0
+    if volume and len(volume) > i and i >= 30:
+        recent = mean(volume[i - 4:i + 1])
+        base = mean(volume[i - 29:i + 1])
+        direction = 1.0 if close[i] >= close[i - 5] else -1.0
         conviction = clamp((recent / base - 1) * 2) if base else 0.0
         add("volume", direction * abs(conviction),
             f"5-day volume {recent / base * 100:.0f}% of the 30-day average, on a "
@@ -388,3 +412,71 @@ def forecast(symbol: str, dates: list[str], open_: list[float], high: list[float
         "risk": risk_metrics(close),
         "levels": support_resistance(high, low, close),
     }
+
+
+# ---------------------------------------------------------------------------
+# 6. Portfolio-level projection
+# ---------------------------------------------------------------------------
+def portfolio_series(histories: dict, shares: dict) -> tuple[list[str], list[float]]:
+    """Reconstruct the book's total value over the dates all symbols share.
+
+    Uses TODAY's share counts throughout, so the series answers "how would this
+    exact book have moved" rather than mixing in the timing of past purchases.
+    Dates are intersected because a symbol with a shorter history would
+    otherwise silently shift the others.
+    """
+    symbols = [s for s, h in histories.items()
+               if (h or {}).get("dates") and (h or {}).get("closes") and shares.get(s)]
+    if not symbols:
+        return [], []
+
+    common = set(histories[symbols[0]]["dates"])
+    for s in symbols[1:]:
+        common &= set(histories[s]["dates"])
+    dates = sorted(common)
+    if len(dates) < 30:
+        return [], []
+
+    lookup = {s: dict(zip(histories[s]["dates"], histories[s]["closes"]))
+              for s in symbols}
+    values = [sum(shares[s] * lookup[s][d] for s in symbols) for d in dates]
+    return dates, values
+
+
+def portfolio_forecast(histories: dict, shares: dict,
+                       horizons: dict[str, int] | None = None) -> dict:
+    """Probability cone for the whole book rather than one symbol.
+
+    This is not the average of the per-symbol cones — correlations between the
+    holdings are already baked into the combined value series, so the portfolio
+    cone is genuinely narrower than the pieces whenever the book is diversified.
+    """
+    dates, values = portfolio_series(histories, shares)
+    if not values:
+        return {"available": False,
+                "reason": "Need at least 30 overlapping trading days across the "
+                          "holdings."}
+
+    bands = probability_bands(values, horizons)
+    if not bands:
+        return {"available": False, "reason": "Not enough return history."}
+
+    current = values[-1]
+    out = {
+        "available": True,
+        "current_value": round(current, 2),
+        "start_date": dates[0],
+        "end_date": dates[-1],
+        "n_days": len(dates),
+        "n_symbols": len(shares),
+        "bands": bands["bands"],
+        "annualized_volatility_pct": bands["annualized_volatility_pct"],
+        "risk": risk_metrics(values),
+        "trend": trend_projection(values),
+    }
+    # Restate each band as a gain/loss in dollars, which is what people read.
+    for label, band in out["bands"].items():
+        band["p50_change"] = round(band["p50"] - current, 2)
+        band["p5_change"] = round(band["p5"] - current, 2)
+        band["p95_change"] = round(band["p95"] - current, 2)
+    return out

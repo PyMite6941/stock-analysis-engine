@@ -216,9 +216,14 @@ def _rows_to_positions(rows: list[list]) -> list[dict]:
             if field in ("shares", "cost_basis"):
                 rec[field] = _clean_number(val)
             elif field == "opened" and val is not None:
-                # Excel hands back datetimes; normalise to an ISO date string.
-                rec[field] = (val.strftime("%Y-%m-%d")
-                              if hasattr(val, "strftime") else str(val).strip()[:10])
+                # Excel hands back datetimes. Keep the clock time when there is
+                # one — day traders open and close inside a single session, and
+                # truncating to the date would erase the holding period.
+                if hasattr(val, "strftime"):
+                    has_clock = any(getattr(val, a, 0) for a in ("hour", "minute", "second"))
+                    rec[field] = val.strftime("%Y-%m-%d %H:%M" if has_clock else "%Y-%m-%d")
+                else:
+                    rec[field] = str(val).strip()[:16]
             elif val is not None and str(val).strip():
                 rec[field] = str(val).strip()
 

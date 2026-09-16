@@ -25,7 +25,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from core import compare, data, daytrade, forecast, indicators, metrics, positions
+from core import (backtest, compare, correlation, data, daytrade, forecast,
+                  income, indicators, metrics, positions, realized)
 from backend import ai, exports
 from backend.middleware import SecurityAndAuthMiddleware, logger
 
@@ -106,6 +107,41 @@ class ExportRequest(BaseModel):
     positions: list[PositionIn] = []
     format: str = "csv"          # "csv" | "xlsx"
     include_analysis: bool = True
+
+
+class SaleIn(BaseModel):
+    symbol: str
+    shares: float
+    cost_basis: float
+    exit_price: float
+    # Both accept "YYYY-MM-DD" or "YYYY-MM-DD HH:MM" — the clock time matters
+    # for intraday round trips, where the holding period is minutes.
+    opened: Optional[str] = None
+    closed: Optional[str] = None
+    note: Optional[str] = None
+    id: Optional[str] = None
+
+
+class SellRequest(BaseModel):
+    positions: list[PositionIn] = []
+    symbol: str
+    shares: float
+    price: float
+    sold_on: Optional[str] = None
+    method: str = "fifo"          # fifo | lifo | specific
+    lot_ids: list[str] = []
+
+
+class RealizedRequest(BaseModel):
+    sales: list[SaleIn] = []
+    positions: list[PositionIn] = []
+    year: Optional[int] = None
+    format: str = "csv"
+
+
+class PortfolioAnalysisRequest(BaseModel):
+    positions: list[PositionIn] = []
+    period: str = "1y"
 
 
 class CompareRequest(BaseModel):
@@ -299,6 +335,195 @@ def portfolio(req: PortfolioRequest):
     result["by_symbol"] = positions.aggregate_lots(result["positions"])
     result["unknown_symbols"] = [q.symbol for q in quotes if q.not_found]
     return result
+
+
+@app.get("/api/backtest")
+def backtest_endpoint(symbol: str, period: str = "5y", horizon: int = 21):
+    """Did the signal score actually predict anything on this symbol?
+
+    Scores every historical bar point-in-time, then measures the forward return.
+    Reports the verdict honestly, including "no-edge" and "inverted".
+    """
+    data.require_symbol(symbol)
+    c = data.get_candles(symbol, period, "1d")
+    if not c.close:
+        raise HTTPException(422, f"No price history for {symbol.upper()}.")
+    out = backtest.backtest_signal(c.close, c.volume, horizon=horizon)
+    out["symbol"] = symbol.upper()
+    out["period"] = period
+    out["summary"] = backtest.backtest_summary(out)
+    return out
+
+
+@app.post("/api/portfolio/income")
+def portfolio_income(req: PortfolioAnalysisRequest):
+    """Dividend income: annual/monthly projection, yield on cost, ex-div dates."""
+    parsed = positions.parse_positions([p.model_dump() for p in req.positions])
+    if not parsed:
+        raise HTTPException(422, "No valid positions.")
+
+    symbols = sorted({p.symbol for p in parsed})
+    quotes = data.get_quotes(symbols)
+    known = [q.symbol for q in quotes if not q.not_found]
+    if not known:
+        raise data.SymbolNotFound(", ".join(symbols))
+
+    def income_for(sym):
+        try:
+            return sym, (data.get_insights(sym) or {}).get("income", {}) or {}
+        except Exception:  # noqa: BLE001 - a missing block just means no dividend
+            return sym, {}
+
+    with ThreadPoolExecutor(max_workers=min(8, max(1, len(known)))) as ex:
+        income_map = dict(ex.map(income_for, known))
+
+    held = [p for p in parsed if p.symbol in known]
+    out = income.portfolio_income(held, quotes, income_map)
+    out["not_found"] = [q.symbol for q in quotes if q.not_found]
+    return out
+
+
+@app.post("/api/portfolio/correlation")
+def portfolio_correlation(req: PortfolioAnalysisRequest):
+    """Correlation matrix + how many independent bets the book really is."""
+    parsed = positions.parse_positions([p.model_dump() for p in req.positions])
+    symbols = sorted({p.symbol for p in parsed})
+    if len(symbols) < 2:
+        return {"available": False,
+                "reason": "Correlation needs at least two different holdings."}
+
+    quotes = data.get_quotes(symbols)
+    known = [q.symbol for q in quotes if not q.not_found]
+    if len(known) < 2:
+        return {"available": False,
+                "reason": "Fewer than two holdings could be priced."}
+
+    with ThreadPoolExecutor(max_workers=min(8, len(known))) as ex:
+        hists = list(ex.map(lambda s: data.get_history(s, req.period), known))
+    histories = {h.symbol: h.to_dict() for h in hists}
+
+    # Weight by market value so the diversification maths reflects real sizing.
+    valued = positions.value_portfolio(
+        [p for p in parsed if p.symbol in known], quotes)
+    weights = {}
+    for row in valued["positions"]:
+        weights[row["symbol"]] = weights.get(row["symbol"], 0) + (row["market_value"] or 0)
+
+    corr = correlation.correlation_matrix(histories)
+    div = correlation.diversification(histories, weights)
+    return {"correlation": corr, "diversification": div,
+            "verdict": correlation.verdict(corr, div), "period": req.period,
+            "not_found": [q.symbol for q in quotes if q.not_found]}
+
+
+@app.post("/api/portfolio/forecast")
+def portfolio_forecast_endpoint(req: PortfolioAnalysisRequest):
+    """Probability cone for the whole book, with correlations already baked in."""
+    parsed = positions.parse_positions([p.model_dump() for p in req.positions])
+    if not parsed:
+        raise HTTPException(422, "No valid positions.")
+
+    symbols = sorted({p.symbol for p in parsed})
+    quotes = data.get_quotes(symbols)
+    known = [q.symbol for q in quotes if not q.not_found]
+    if not known:
+        raise data.SymbolNotFound(", ".join(symbols))
+
+    with ThreadPoolExecutor(max_workers=min(8, max(1, len(known)))) as ex:
+        hists = list(ex.map(lambda s: data.get_history(s, req.period), known))
+    histories = {h.symbol: h.to_dict() for h in hists}
+
+    shares: dict[str, float] = {}
+    for p in parsed:
+        if p.symbol in known:
+            shares[p.symbol] = shares.get(p.symbol, 0.0) + p.shares
+
+    out = forecast.portfolio_forecast(histories, shares)
+    out["period"] = req.period
+    out["not_found"] = [q.symbol for q in quotes if q.not_found]
+    return out
+
+
+@app.post("/api/portfolio/sell")
+def portfolio_sell(req: SellRequest):
+    """Match a sale against open lots and return the realised rows.
+
+    Stateless: the client sends its lots, gets back the realised gains plus the
+    updated lot list, and persists both. The server never stores holdings.
+    """
+    lots = positions.parse_positions([p.model_dump() for p in req.positions])
+    result = realized.match_sale(
+        lots, req.symbol, req.shares, req.price, req.sold_on,
+        (req.method or "fifo").lower(), req.lot_ids or None)
+    if result.get("error"):
+        raise HTTPException(422, result["error"])
+    if not result["realized"]:
+        raise HTTPException(
+            422, f"No open lots of {req.symbol.upper()} to sell against.")
+    return {
+        "realized": result["realized"],
+        "remaining_lots": [l.to_dict() for l in result["remaining_lots"]],
+        "unmatched": result["unmatched"],
+        "proceeds": round(req.shares * req.price, 2),
+    }
+
+
+@app.post("/api/portfolio/realized")
+def portfolio_realized(req: RealizedRequest):
+    """Realised gains: totals, short vs long term, per-year, and lots nearing
+    long-term treatment."""
+    sales = realized.parse_sales([s.model_dump() for s in req.sales])
+    lots = positions.parse_positions([p.model_dump() for p in req.positions])
+    return {
+        "sales": sales,
+        "summary": realized.realized_summary(sales, req.year),
+        "by_year": realized.realized_by_year(sales),
+        "approaching_long_term": realized.lots_approaching_long_term(lots),
+    }
+
+
+@app.post("/api/portfolio/realized/export")
+def portfolio_realized_export(req: RealizedRequest):
+    """Realised gains as CSV (default) or a multi-sheet XLSX."""
+    sales = realized.parse_sales([s.model_dump() for s in req.sales])
+    if not sales:
+        raise HTTPException(422, "No sales to export.")
+    fmt = (req.format or "csv").lower()
+
+    if fmt == "csv":
+        return Response(
+            content=exports.rows_to_csv(realized.to_csv_rows(sales)),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=realized_gains.csv"})
+
+    if fmt in ("xlsx", "excel"):
+        summary = realized.realized_summary(sales, req.year)
+        sheets = {
+            "Realized Gains": realized.to_csv_rows(sales),
+            "Summary": [["metric", "value"]]
+                       + [[k, v if not isinstance(v, dict) else
+                           f"{v.get('symbol')} ({v.get('pnl')})"]
+                          for k, v in summary.items()],
+        }
+        by_year = realized.realized_by_year(sales)
+        if by_year:
+            sheets["By Year"] = [
+                ["year", "n_sales", "total_pnl", "short_term_pnl",
+                 "long_term_pnl", "win_rate_pct"]
+            ] + [[y["year"], y["n_sales"], y["total_pnl"], y["short_term_pnl"],
+                  y["long_term_pnl"], y["win_rate_pct"]] for y in by_year]
+        try:
+            body = exports.sheets_to_xlsx(sheets)
+        except exports.XlsxUnavailable as e:
+            raise HTTPException(501, str(e))
+        return Response(
+            content=body,
+            media_type="application/vnd.openxmlformats-officedocument."
+                       "spreadsheetml.sheet",
+            headers={"Content-Disposition":
+                     "attachment; filename=realized_gains.xlsx"})
+
+    raise HTTPException(400, f"Unsupported format {fmt!r}. Use 'csv' or 'xlsx'.")
 
 
 @app.post("/api/portfolio/compare")
