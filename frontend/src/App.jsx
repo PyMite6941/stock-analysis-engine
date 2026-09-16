@@ -2,12 +2,15 @@ import { useState, useEffect } from "react";
 import HomePage from "./components/HomePage.jsx";
 import AnalysisView from "./components/AnalysisView.jsx";
 import LoginPage from "./components/LoginPage.jsx";
+import { loadMode, saveMode } from "./modes.js";
 
 const AUTH_KEY = "sae:api_key";
 
 export default function App() {
   const [route, setRoute] = useState({ view: "home", query: null });
   const [theme, setTheme] = useState(() => localStorage.getItem("sae:theme") || "dark");
+  // Mode lives at the top so it survives navigation between home and analysis.
+  const [mode, setModeState] = useState(loadMode);
   const [apiKey, setApiKey] = useState(() => sessionStorage.getItem(AUTH_KEY));
   const [needsAuth, setNeedsAuth] = useState(null); // null=checking, true/false
 
@@ -38,6 +41,7 @@ export default function App() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+  const setMode = (id) => { saveMode(id); setModeState(id); };
 
   if (needsAuth === null) {
     return <div className="login-page"><div className="login-card"><p>Connecting…</p></div></div>;
@@ -51,7 +55,7 @@ export default function App() {
     }} />;
   }
 
-  const shared = { theme, toggleTheme };
+  const shared = { theme, toggleTheme, mode, setMode };
 
   if (route.view === "analysis") {
     return (

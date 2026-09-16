@@ -41,6 +41,20 @@ def _cache_put(key: str, value):
     return value
 
 
+class SymbolNotFound(LookupError):
+    """The ticker doesn't exist at the provider.
+
+    Distinct from a network/provider failure on purpose: a typo'd ticker is a
+    user error with an obvious fix, and surfacing it as a generic request
+    failure sends people hunting for a connection problem that isn't there. The
+    API turns this into a 404 with a plain-English message.
+    """
+
+    def __init__(self, symbol: str):
+        self.symbol = (symbol or "").upper()
+        super().__init__(f"Stock/ETF not found: {self.symbol}")
+
+
 # ---------------------------------------------------------------------------
 # Data shapes
 # ---------------------------------------------------------------------------
@@ -54,6 +68,9 @@ class Quote:
     currency: str = "USD"
     pe: Optional[float] = None
     market_cap: Optional[float] = None  # in raw currency units
+    # True when the provider has no such ticker. Carried on the quote rather
+    # than raised, so one typo in a watchlist doesn't blank the other symbols.
+    not_found: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -158,6 +175,11 @@ class YFinanceProvider:
                  or meta.get("regularMarketPrice") or meta.get("previousClose") or 0.0)
         prev = (fast.get("previous_close") or meta.get("regularMarketPreviousClose")
                 or meta.get("previousClose") or price)
+        # Yahoo answers an unknown ticker with a near-empty info dict and no
+        # price at all — that's a typo, not an outage.
+        if not price and not _has_identity(meta):
+            return Quote(symbol=sym, name=sym, price=0.0, change=0.0,
+                         change_pct=0.0, not_found=True)
         change = (price - prev) if price and prev else 0.0
         change_pct = (change / prev * 100) if prev else 0.0
         return Quote(
@@ -338,6 +360,96 @@ class YFinanceProvider:
             },
         }
 
+    def holdings(self, symbol: str) -> dict:
+        """What an ETF / index fund actually owns.
+
+        Buying SPY means buying ~500 companies, and the concentration inside the
+        wrapper is the thing people miss — a "diversified" S&P fund is a third
+        technology. So we return top holdings, sector weights, and asset mix.
+
+        Returns {"is_fund": False} for ordinary stocks so callers can branch
+        without a second lookup.
+        """
+        sym = symbol.upper()
+        key = f"holdings:{sym}"
+        cached = _cache_get(key, 3600)  # fund composition changes slowly
+        if cached is not None:
+            return cached
+
+        info = self._info(sym)
+        quote_type = (info.get("quoteType") or "").upper()
+        out = {
+            "symbol": sym,
+            "name": info.get("shortName") or info.get("longName") or sym,
+            "quote_type": quote_type or None,
+            "is_fund": quote_type in ("ETF", "MUTUALFUND", "INDEX"),
+            "holdings": [],
+            "sectors": [],
+            "asset_classes": {},
+        }
+        if not out["is_fund"]:
+            return _cache_put(key, out)
+
+        try:
+            fd = self._yf.Ticker(sym).funds_data
+        except Exception:
+            return _cache_put(key, out)
+
+        try:
+            top = fd.top_holdings
+            if top is not None and not top.empty:
+                # Index is the ticker; the percent column arrives as a fraction.
+                col = "Holding Percent"
+                out["holdings"] = [
+                    {"symbol": str(idx),
+                     "name": str(row.get("Name", idx)),
+                     "weight_pct": round(float(row[col]) * 100, 3)
+                     if col in row and row[col] is not None else None}
+                    for idx, row in top.iterrows()
+                ]
+                out["top_n_weight_pct"] = round(
+                    sum(h["weight_pct"] or 0 for h in out["holdings"]), 2)
+        except Exception:
+            pass
+
+        try:
+            sectors = fd.sector_weightings or {}
+            out["sectors"] = sorted(
+                ({"sector": k.replace("_", " ").title(),
+                  "weight_pct": round(float(v) * 100, 2)}
+                 for k, v in sectors.items() if v is not None),
+                key=lambda s: -s["weight_pct"])
+        except Exception:
+            pass
+
+        for attr, dest in (("asset_classes", "asset_classes"),
+                           ("fund_overview", "overview"),
+                           ("fund_operations", None)):
+            try:
+                val = getattr(fd, attr, None)
+                if attr == "asset_classes" and val:
+                    out["asset_classes"] = {
+                        k: round(float(v) * 100, 2) for k, v in val.items()
+                        if v is not None}
+                elif dest and val:
+                    out[dest] = {k: v for k, v in dict(val).items() if v is not None}
+            except Exception:
+                continue
+
+        try:
+            out["description"] = fd.description or None
+        except Exception:
+            out["description"] = None
+
+        # Expense ratio and ytdReturn live on .info, not funds_data, and Yahoo
+        # already reports both as percents (SPY is 0.0945, i.e. 0.0945%) — do
+        # NOT multiply by 100 here.
+        out["expense_ratio_pct"] = _safe_float(
+            info.get("netExpenseRatio") or info.get("annualReportExpenseRatio"))
+        out["total_assets"] = _safe_float(info.get("totalAssets"))
+        out["ytd_return_pct"] = _safe_float(info.get("ytdReturn"))
+        return _cache_put(key, out)
+
     def candles(self, symbol: str, period: str = "6mo",
                 interval: str = "1d") -> Candles:
         key = f"candles:{symbol.upper()}:{period}:{interval}"
@@ -394,6 +506,11 @@ class FinnhubProvider:
             sym = sym.upper()
             q = self._get("/quote", symbol=sym)            # c=current, pc=prev close
             profile = self._get("/stock/profile2", symbol=sym)
+            # Finnhub answers an unknown ticker with zeroed quote + empty profile.
+            if not q.get("c") and not profile.get("name"):
+                out.append(Quote(symbol=sym, name=sym, price=0.0, change=0.0,
+                                 change_pct=0.0, not_found=True))
+                continue
             metric = self._get("/stock/metric", symbol=sym, metric="all").get("metric", {})
             price, prev = q.get("c", 0.0), q.get("pc", 0.0)
             change = price - prev
@@ -510,6 +627,20 @@ class FinnhubProvider:
             "recommendation": rec, "news": [],
         }
 
+    def holdings(self, symbol: str) -> dict:
+        """Finnhub gates ETF holdings behind a paid plan, so borrow yfinance.
+
+        Fund composition is static enough that mixing providers for this one
+        field costs nothing in consistency, and the alternative is an empty
+        panel on every index fund.
+        """
+        try:
+            return YFinanceProvider().holdings(symbol)
+        except Exception:
+            return {"symbol": symbol.upper(), "is_fund": False, "holdings": [],
+                    "sectors": [], "asset_classes": {},
+                    "unavailable": "ETF holdings need the yfinance provider."}
+
     _RESOLUTION = {"1d": "D", "1wk": "W", "1mo": "M", "3h": "60", "1h": "60",
                    "30m": "30", "15m": "15", "5m": "5", "2m": "1", "1m": "1"}
 
@@ -602,8 +733,28 @@ def get_quotes(symbols: list[str]) -> list[Quote]:
     return get_provider().quotes([s.strip() for s in symbols if s.strip()])
 
 
+def require_symbol(symbol: str) -> Quote:
+    """Resolve a ticker or raise SymbolNotFound.
+
+    Single-symbol endpoints call this first so a typo fails fast with a clear
+    message instead of rendering a page full of dashes.
+    """
+    sym = (symbol or "").strip()
+    if not sym:
+        raise SymbolNotFound(sym)
+    quotes = get_quotes([sym])
+    if not quotes or quotes[0].not_found:
+        raise SymbolNotFound(sym)
+    return quotes[0]
+
+
 def get_candles(symbol: str, period: str = "6mo", interval: str = "1d") -> Candles:
-    return get_provider().candles(symbol, period, interval)
+    c = get_provider().candles(symbol, period, interval)
+    # Empty series is ambiguous — a dead ticker and a period with no bars look
+    # identical here, so ask the quote endpoint which one it is.
+    if not c.close:
+        require_symbol(symbol)
+    return c
 
 
 def get_fundamentals(symbol: str) -> Fundamentals:
@@ -618,6 +769,11 @@ def get_insights(symbol: str) -> dict:
     return get_provider().insights(symbol)
 
 
+def get_holdings(symbol: str) -> dict:
+    """ETF / index-fund composition. {"is_fund": False} for ordinary stocks."""
+    return get_provider().holdings(symbol)
+
+
 def get_history(symbol: str, period: str = "6mo") -> History:
     # Close-only view, derived from the full candle fetch.
     return get_provider().candles(symbol, period).to_history()
@@ -626,6 +782,15 @@ def get_history(symbol: str, period: str = "6mo") -> History:
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+# Any one of these on a .info dict means the provider actually knows the ticker.
+_IDENTITY_KEYS = ("shortName", "longName", "symbol", "quoteType", "exchange",
+                  "regularMarketPrice", "previousClose", "currency")
+
+
+def _has_identity(info: dict) -> bool:
+    return bool(info) and any(info.get(k) for k in _IDENTITY_KEYS)
+
+
 def _safe_float(v, scale: float = 1.0) -> Optional[float]:
     try:
         if v is None or v == "":
