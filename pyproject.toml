@@ -1,3 +1,50 @@
+# Project metadata + the dependency list for the Vercel serverless function.
+#
+# Vercel's Python builder uses `uv`, and when a pyproject.toml exists it runs
+# `uv lock` against it INSTEAD of reading requirements.txt. A pyproject.toml
+# carrying only pytest config makes that fail with:
+#
+#     error: No `project` table found in: /vercel/path0/pyproject.toml
+#
+# which kills the whole build after the frontend has already succeeded. So the
+# runtime dependencies have to live here. requirements.txt is kept in step for
+# local installs and for anyone not using uv.
+
+[project]
+name = "stock-analysis-engine"
+version = "0.1.0"
+description = "Live stock data, computed metrics, projections and an AI analyst."
+requires-python = ">=3.12"
+
+dependencies = [
+    "fastapi>=0.115",
+    "pydantic>=2.7",
+    # Imported directly by backend/middleware.py rather than relied on as a
+    # FastAPI transitive dependency.
+    "starlette>=0.37",
+    "httpx>=0.27",
+    "requests>=2.31",
+    "yfinance>=0.2.40",
+    # Spreadsheet export/import. CSV works without openpyxl; XLSX needs it.
+    "openpyxl>=3.1",
+    # Multipart parsing for the holdings file upload.
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+# Not installed on Vercel — the serverless runtime provides the server, and
+# tests never run there.
+dev = [
+    "uvicorn[standard]>=0.30",
+    "pytest>=8.0",
+]
+
+[tool.uv]
+# There is no installable package here — `core/` and `backend/` are imported
+# from the repo root via sys.path in api/index.py. Without this, uv tries to
+# build a distribution and fails looking for a build backend.
+package = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

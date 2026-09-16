@@ -1,92 +1,99 @@
 # Deploying to Vercel
 
-> **Status (2026-09-16): not currently deployed.** The Vercel project this repo
-> used to be linked to no longer exists — the only project on the
-> `matt-g's projects` team is `fitness-ai-agents`. The stale `.vercel/` link file
-> has been removed so a fresh link starts clean. Pushing to GitHub does nothing
-> until the steps below are done once.
+Live at **<https://stock-analysis-engine.vercel.app>**, linked to
+`PyMite6941/stock-analysis-engine` on the `matt-g's projects` team. Pushes to
+`master` trigger a production deploy automatically — no manual step needed.
 
-## One-time setup
+## The `uv lock` build failure (fixed 2026-09-16)
 
-### Option A — Vercel dashboard (easiest)
+Three consecutive pushes deployed successfully *as far as GitHub was concerned*
+and then failed at build time, leaving production serving a June build. The
+frontend compiled fine; the Python step died:
 
-1. <https://vercel.com/new> → **Import Git Repository**
-2. Pick `PyMite6941/stock-analysis-engine`
-3. Framework preset: **Other** — do not let it guess Vite, because `vercel.json`
-   already supplies the build command and output directory
-4. Add the environment variables in the table below **before** the first deploy,
-   so the first build comes up working
-5. **Deploy**
-
-### Option B — CLI
-
-```bash
-npm i -g vercel
-vercel login          # interactive — run this yourself
-vercel link           # creates the project and writes .vercel/
-vercel --prod
+```
+Installing required dependencies from pyproject.toml...
+Error: Failed to run "uv lock --python .../bin/python"
+error: No `project` table found in: /vercel/path0/pyproject.toml
 ```
 
-Both are interactive, so they need a human at the keyboard.
+**Cause.** Vercel's Python builder moved to `uv`. When a `pyproject.toml` is
+present, `uv lock` runs against it *instead of* reading `requirements.txt`. This
+repo's `pyproject.toml` held nothing but pytest config, so `uv lock` failed and
+took the whole build with it. Nothing in the application code was wrong — the
+last successful deploy simply predated the platform change, so the next push was
+the first to hit it.
+
+**Fix.** `pyproject.toml` now carries a real `[project]` table with the runtime
+dependencies, plus `[tool.uv] package = false` (there is no installable package
+here — `core/` and `backend/` are imported from the repo root by `api/index.py`).
+`requirements.txt` is kept in step for local installs.
+
+**Reproduce the build step locally before pushing** — it takes seconds and would
+have caught this:
+
+```bash
+uv lock            # must exit 0; this is what Vercel runs
+cd frontend && npm install && npm run build
+```
 
 ## Environment variables
 
-Set these in **Project → Settings → Environment Variables** (Production, and
-Preview if you want previews to work too).
+Set in **Project → Settings → Environment Variables**.
 
-| Variable | Value | Why |
+| Variable | Current | Notes |
 |---|---|---|
-| `DATA_PROVIDER` | `hybrid` (or `finnhub`) | **Important.** yfinance is unreliable from cloud IPs — Yahoo throttles datacentre ranges. `hybrid` takes real-time quotes from Finnhub's free tier and history from yfinance. |
-| `FINNHUB_API_KEY` | your free key | Needed by `hybrid` and `finnhub`. Free at <https://finnhub.io/register>, no card. |
-| `GROQ_API_KEY` | your Groq key | The AI analyst. Without it `/api/chat` returns 503 and the rest of the app still works. |
-| `GROQ_MODEL` | `openai/gpt-oss-120b` | **Check this one.** Groq decommissioned `llama-3.3-70b-versatile` on 2026-06-17. If an old value is set here it overrides the code default and the analyst stays broken. Leaving it unset is fine — the code already defaults correctly. |
-| `OPENROUTER_API_KEY` | optional | Fallback if Groq fails. |
-| `FINNHUB_WS_TOKEN` | optional | Enables the free client-side live ticker. Use a *throwaway* free key: it is served to the browser. Without it the UI falls back to 30-second polling. |
-| `API_KEY` | optional | Gates every endpoint behind a login screen. Leave unset for a public site. |
+| `GROQ_API_KEY` | ✅ set | `/api/health` reports `ai_configured: true`. |
+| `GROQ_MODEL` | **check this** | Groq retired `llama-3.3-70b-versatile` on 2026-06-17. If that value is still set here it overrides the code default and the analyst stays broken. Either delete the variable (the code defaults to `openai/gpt-oss-120b`) or set it to that explicitly. |
+| `DATA_PROVIDER` | `yfinance` | **Worth changing.** yfinance gets throttled from cloud IPs. `hybrid` takes real-time quotes from Finnhub's free tier and history from yfinance. |
+| `FINNHUB_API_KEY` | — | Free at <https://finnhub.io/register>, no card. Needed by `hybrid`/`finnhub`. |
+| `OPENROUTER_API_KEY` | optional | Fallback when Groq fails. |
+| `FINNHUB_WS_TOKEN` | optional | Enables the free client-side live ticker. Use a *throwaway* free key — it is served to the browser. Without it the UI falls back to 30-second polling. |
+| `API_KEY` | unset | Gates every endpoint behind a login screen. Leave unset for a public site. |
 
-## How the deployment is wired
+## How it is wired
 
 ```
 vercel.json
   buildCommand      cd frontend && npm install && npm run build
   outputDirectory   frontend/dist          <- static React app
   rewrites          /api/(.*) -> /api/index
+
+api/index.py        re-exports backend.main:app for @vercel/python
+pyproject.toml      dependency source of truth for the Python function
 ```
 
-`api/index.py` re-exports `backend.main:app`, and Vercel's `@vercel/python`
-runtime serves any module-level `app` found under `/api`. Root
-`requirements.txt` is the dependency list for that function — it deliberately
-omits `uvicorn` (Vercel provides the server) and includes `openpyxl` and
-`python-multipart` for the XLSX export/import.
-
-Because the frontend calls relative `/api/...`, production is same-origin and
-needs no CORS.
+The frontend calls relative `/api/...`, so production is same-origin and needs
+no CORS.
 
 ## Verifying a deploy
 
+Check an endpoint that only exists in the new code — `/api/health` has been
+there for months and will happily answer from a stale build:
+
 ```bash
-curl https://<your-deployment>/api/health
-# {"status":"ok","data_provider":"hybrid","ai_configured":true}
+curl https://stock-analysis-engine.vercel.app/api/health
+curl "https://stock-analysis-engine.vercel.app/api/backtest?symbol=AAPL"
+curl "https://stock-analysis-engine.vercel.app/api/holdings?symbol=SPY"
 ```
 
-`ai_configured: false` means no AI key reached the function. Then check a real
-data call and the AI:
+A 404 on the latter two means production is running old code even though the
+push "succeeded". To see why:
 
 ```bash
-curl "https://<your-deployment>/api/quotes?symbols=AAPL"
-curl -X POST https://<your-deployment>/api/chat \
-  -H 'content-type: application/json' \
-  -d '{"messages":[{"role":"user","content":"hi"}],"symbols":["AAPL"]}'
+gh api repos/PyMite6941/stock-analysis-engine/deployments?per_page=3 \
+  --jq '.[] | "\(.created_at) \(.sha[0:7])"'
+gh api repos/PyMite6941/stock-analysis-engine/deployments/<id>/statuses \
+  --jq '.[].state'
+npx vercel inspect <dpl_id> --logs
 ```
 
 ## Known constraints
 
-- **Cold starts.** The Python function imports pandas via yfinance, so a cold
-  request can take several seconds. The in-process TTL cache and the
-  `s-maxage=15` edge headers hide most of this once warm.
-- **The analysis page is call-heavy.** It fires roughly ten API calls on load
-  (portfolio, realised, income, forecast, correlation, compare, backtest, plus
-  per-symbol panels). Fine on a warm instance; noticeable on a cold one.
+- **Cold starts.** The function imports pandas via yfinance, so a cold request
+  takes several seconds. The in-process TTL cache and `s-maxage=15` edge headers
+  hide most of it once warm.
+- **The analysis page is call-heavy** — roughly ten API calls on load. Fine warm,
+  noticeable cold.
 - **The offline Streamlit app is local-only.** Streamlit needs a persistent
   server and is not part of this deployment.
 - **Alerts only fire while a browser tab is open** — they are evaluated
