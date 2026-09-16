@@ -43,9 +43,9 @@ Set in **Project → Settings → Environment Variables**.
 | Variable | Current | Notes |
 |---|---|---|
 | `GROQ_API_KEY` | ✅ set | `/api/health` reports `ai_configured: true`. |
-| `GROQ_MODEL` | **check this** | Groq retired `llama-3.3-70b-versatile` on 2026-06-17. If that value is still set here it overrides the code default and the analyst stays broken. Either delete the variable (the code defaults to `openai/gpt-oss-120b`) or set it to that explicitly. |
-| `DATA_PROVIDER` | `yfinance` | **Worth changing.** yfinance gets throttled from cloud IPs. `hybrid` takes real-time quotes from Finnhub's free tier and history from yfinance. |
-| `FINNHUB_API_KEY` | — | Free at <https://finnhub.io/register>, no card. Needed by `hybrid`/`finnhub`. |
+| `GROQ_MODEL` | ✅ fine | Verified in production: `provider: groq, model: openai/gpt-oss-120b`. The code default is carrying through, so this does not need setting. |
+| `FINNHUB_API_KEY` | **add this** | Free at <https://finnhub.io/register>, no card. Adding it is enough — the provider auto-upgrades to `hybrid` (real-time quotes from Finnhub, history from yfinance). Yahoo throttles datacentre IPs, so this is the single biggest reliability win available. |
+| `DATA_PROVIDER` | unset | Leave it unset. It only exists to *override* the automatic choice (`yfinance` \| `finnhub` \| `hybrid`). Setting it to `yfinance` while a Finnhub key is present would downgrade you. |
 | `OPENROUTER_API_KEY` | optional | Fallback when Groq fails. |
 | `FINNHUB_WS_TOKEN` | optional | Enables the free client-side live ticker. Use a *throwaway* free key — it is served to the browser. Without it the UI falls back to 30-second polling. |
 | `API_KEY` | unset | Gates every endpoint behind a login screen. Leave unset for a public site. |
@@ -72,6 +72,8 @@ there for months and will happily answer from a stale build:
 
 ```bash
 curl https://stock-analysis-engine.vercel.app/api/health
+# data_provider tells you what is REALLY serving data, and
+# data_provider_source says whether it was set explicitly or auto-chosen
 curl "https://stock-analysis-engine.vercel.app/api/backtest?symbol=AAPL"
 curl "https://stock-analysis-engine.vercel.app/api/holdings?symbol=SPY"
 ```

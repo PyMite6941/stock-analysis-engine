@@ -219,12 +219,23 @@ def realtime_token():
 
 @app.get("/api/health")
 def health():
-    # Report the configured provider from env WITHOUT instantiating it — so this
-    # never 500s just because the provider's deps/keys aren't present yet.
+    """Status, and which provider is ACTUALLY serving data.
+
+    Reporting the raw DATA_PROVIDER env var here used to be a lie whenever the
+    value was unset or unusable — the point of this endpoint is to tell you what
+    is really running, so it resolves the same way the request path does. Still
+    never instantiates the provider, so a missing key can't 500 the healthcheck.
+    """
     import os
+    configured = os.environ.get("DATA_PROVIDER", "").strip().lower() or None
+    resolved = data.choose_provider_name()
     return {
         "status": "ok",
-        "data_provider": os.environ.get("DATA_PROVIDER", "yfinance"),
+        "data_provider": resolved,
+        # Explicit config vs auto-selected, so a surprising value is traceable.
+        "data_provider_configured": configured,
+        "data_provider_source": "env" if configured else "auto",
+        "finnhub_key": bool(os.environ.get("FINNHUB_API_KEY")),
         "ai_configured": bool(os.environ.get("GROQ_API_KEY")
                               or os.environ.get("OPENROUTER_API_KEY")),
     }

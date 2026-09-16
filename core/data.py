@@ -1,23 +1,38 @@
 """Stock market data fetching.
 
 Pluggable provider behind a stable interface so the rest of the app never cares
-where the numbers came from. Two providers ship today:
+where the numbers came from. Three providers ship today:
 
-  - "yfinance"  (default) — no API key, good for local dev. Uses Yahoo endpoints.
-  - "finnhub"   — real REST API, needs FINNHUB_API_KEY. Free tier is plenty.
+  - "yfinance" — no API key, good for local dev. Uses Yahoo endpoints.
+  - "finnhub"  — real REST API, needs FINNHUB_API_KEY. Free tier is plenty.
+  - "hybrid"   — real-time quotes from Finnhub + everything else from yfinance.
 
-Select with the DATA_PROVIDER env var. Add a provider by writing a class with
-`quotes()` and `history()` and registering it in _PROVIDERS.
+Selection is automatic: set FINNHUB_API_KEY and you get "hybrid", otherwise
+"yfinance". DATA_PROVIDER overrides that when you want something specific. The
+auto-upgrade exists because Yahoo throttles datacentre IPs, so a cloud deploy
+that has the key but forgot the switch would silently run the weaker provider.
+
+Add a provider by writing a class with `quotes()` and `candles()` and
+registering it in _PROVIDERS.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 from typing import Optional
+
+logger = logging.getLogger("stock-engine.data")
+
+# Yahoo throttles datacentre IPs and signals it with an empty frame, not an
+# error. Two retries with a short backoff clears most of it without making a
+# genuinely dead ticker slow to report.
+_YF_RETRIES = 3
+_YF_BACKOFF = 0.4
 
 
 # ---------------------------------------------------------------------------
@@ -460,8 +475,32 @@ class YFinanceProvider:
         intraday_iv = interval.endswith(("m", "h"))
         # prepost=True includes pre-market / after-hours bars so the latest data
         # isn't stuck at the 4pm close when the regular session is over.
-        df = self._yf.Ticker(symbol).history(
-            period=period, interval=native, prepost=intraday_iv).dropna()
+        #
+        # Retried because Yahoo throttles datacentre IPs and answers with an
+        # EMPTY frame rather than an error — indistinguishable from a delisted
+        # ticker at this layer, and it used to surface to the user as
+        # "Stock/ETF not found" for a perfectly real symbol. The hybrid provider
+        # only routes *quotes* through Finnhub, so history has no other path.
+        df = None
+        for attempt in range(_YF_RETRIES):
+            try:
+                df = self._yf.Ticker(symbol).history(
+                    period=period, interval=native, prepost=intraday_iv).dropna()
+                if not df.empty:
+                    break
+            except Exception as e:  # noqa: BLE001 — transient network/parse errors
+                logger.warning("yfinance history failed for %s (attempt %d/%d): %s",
+                               symbol, attempt + 1, _YF_RETRIES, e)
+                df = None
+            if attempt < _YF_RETRIES - 1:
+                time.sleep(_YF_BACKOFF * (2 ** attempt))
+
+        if df is None or df.empty:
+            logger.warning("yfinance returned no bars for %s (%s/%s) after %d "
+                           "attempts", symbol, period, interval, _YF_RETRIES)
+            # Don't cache a failure — the next request should try again rather
+            # than serve an empty chart for the full cache TTL.
+            return Candles(symbol.upper(), [], [], [], [], [], [])
         if resample and not df.empty:
             df = df.resample(resample).agg({
                 "Open": "first", "High": "max", "Low": "min",
@@ -715,17 +754,59 @@ _PROVIDERS = {
 _provider_instance = None
 
 
+def choose_provider_name() -> str:
+    """Pick a provider from the environment.
+
+    An explicit DATA_PROVIDER always wins. Otherwise we upgrade automatically:
+    a FINNHUB_API_KEY means hybrid is available, and hybrid is strictly better
+    than bare yfinance in the cloud (Yahoo throttles datacentre IPs, Finnhub
+    doesn't). Auto-selecting means deploying only needs the KEY, not a second
+    variable set to the right string — one fewer thing to get wrong, and no
+    silent fallback to the weaker provider because someone set the key and
+    forgot the switch.
+    """
+    explicit = os.environ.get("DATA_PROVIDER", "").strip().lower()
+    if explicit:
+        return explicit
+    return "hybrid" if os.environ.get("FINNHUB_API_KEY") else "yfinance"
+
+
 def get_provider():
-    """Return the configured provider (cached)."""
+    """Return the configured provider (cached).
+
+    Degrades rather than dies: a provider that can't be constructed (usually a
+    missing key) falls back to yfinance. A misconfigured env var should make the
+    data less good, not take the whole API down with a 500 on every route.
+    """
     global _provider_instance
-    if _provider_instance is None:
-        name = os.environ.get("DATA_PROVIDER", "yfinance").lower()
-        cls = _PROVIDERS.get(name)
-        if cls is None:
-            raise ValueError(f"Unknown DATA_PROVIDER={name!r}. "
-                             f"Options: {list(_PROVIDERS)}")
+    if _provider_instance is not None:
+        return _provider_instance
+
+    name = choose_provider_name()
+    cls = _PROVIDERS.get(name)
+    if cls is None:
+        logger.warning("Unknown DATA_PROVIDER=%r; falling back to yfinance. "
+                       "Options: %s", name, list(_PROVIDERS))
+        cls, name = YFinanceProvider, "yfinance"
+
+    try:
         _provider_instance = cls()
+    except Exception as e:  # noqa: BLE001 — missing key, missing dep, etc.
+        if cls is YFinanceProvider:
+            raise
+        logger.warning("Data provider %r unavailable (%s); falling back to "
+                       "yfinance.", name, e)
+        _provider_instance = YFinanceProvider()
     return _provider_instance
+
+
+def reset_provider() -> None:
+    """Drop the cached provider so a changed environment takes effect.
+
+    Only used by tests; the serverless instance reads the env once at boot.
+    """
+    global _provider_instance
+    _provider_instance = None
 
 
 # Convenience top-level functions ------------------------------------------------
