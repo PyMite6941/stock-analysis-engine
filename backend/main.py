@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import csv
 import io
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
@@ -142,6 +143,15 @@ class RealizedRequest(BaseModel):
 class PortfolioAnalysisRequest(BaseModel):
     positions: list[PositionIn] = []
     period: str = "1y"
+
+
+class ExportAllRequest(BaseModel):
+    """Everything the user has, in one workbook."""
+    symbols: list[str] = []
+    positions: list[PositionIn] = []
+    sales: list[SaleIn] = []
+    period: str = "6mo"
+    benchmark: Optional[str] = "SPY"
 
 
 class CompareRequest(BaseModel):
@@ -524,6 +534,163 @@ def portfolio_realized_export(req: RealizedRequest):
                      "attachment; filename=realized_gains.xlsx"})
 
     raise HTTPException(400, f"Unsupported format {fmt!r}. Use 'csv' or 'xlsx'.")
+
+
+@app.post("/api/export/all")
+def export_all(req: ExportAllRequest):
+    """One click, one file: every sheet the user could want.
+
+    Exporting piecemeal means remembering which button produced which file and
+    stitching them together later. A single workbook with a sheet per view is
+    what someone actually wants when they say "export my data", so this is the
+    default the UI offers and the per-panel buttons become the exception.
+
+    Every section is optional and skipped silently when there's nothing to put
+    in it — an empty portfolio shouldn't produce an empty-sheet error.
+    """
+    sheets: dict[str, list[list]] = {}
+    notes = [["section", "status"]]
+
+    parsed = positions.parse_positions([p.model_dump() for p in req.positions])
+    sold = realized.parse_sales([s.model_dump() for s in req.sales])
+
+    # Quote every symbol the user cares about in ONE call: watchlist + holdings.
+    wanted = sorted({s.strip().upper() for s in req.symbols if s.strip()}
+                    | {p.symbol for p in parsed})
+    quotes = data.get_quotes(wanted) if wanted else []
+    known = [q.symbol for q in quotes if not q.not_found]
+
+    # --- watchlist analysis -------------------------------------------------
+    watch = [s.strip().upper() for s in req.symbols if s.strip()]
+    watch = [s for s in watch if s in known]
+    if watch:
+        try:
+            result = _analyze(watch, req.period)
+            by_sym = {a["symbol"]: a for a in result["analyses"]}
+            rows = [["symbol", "name", "price", "change", "change_pct", "pe",
+                     "market_cap", "total_return_pct", "annualized_volatility_pct",
+                     "max_drawdown_pct", "trend"]]
+            for q in result["quotes"]:
+                a = by_sym.get(q["symbol"], {})
+                rows.append([q["symbol"], q["name"], q["price"], q["change"],
+                             q["change_pct"], q["pe"], q["market_cap"],
+                             a.get("total_return_pct"),
+                             a.get("annualized_volatility_pct"),
+                             a.get("max_drawdown_pct"), a.get("trend")])
+            sheets["Watchlist"] = rows
+            for sym, hist in result["histories"].items():
+                sheets[f"{sym} prices"] = [["date", "close"]] + [
+                    [d, c] for d, c in zip(hist["dates"], hist["closes"])]
+            notes.append(["Watchlist", f"{len(watch)} symbols over {req.period}"])
+        except Exception as e:  # noqa: BLE001 — one bad section shouldn't kill the file
+            notes.append(["Watchlist", f"skipped: {e}"])
+
+    # --- holdings -----------------------------------------------------------
+    if parsed:
+        try:
+            valued = positions.value_portfolio(parsed, quotes)
+            sheets["Holdings"] = positions.to_csv_rows(valued["positions"])
+            sheets["By Symbol"] = exports.dicts_to_rows(
+                positions.aggregate_lots(valued["positions"]),
+                ["symbol", "shares", "lots", "avg_cost", "cost", "price",
+                 "market_value", "pnl", "pnl_pct", "day_pnl"])
+            sheets["Portfolio Summary"] = [["metric", "value"]] + [
+                [k, v if not isinstance(v, dict) else
+                 f"{v.get('symbol')} ({list(v.values())[1]})"]
+                for k, v in valued["summary"].items()]
+            notes.append(["Holdings", f"{len(parsed)} lot" + ("s" if len(parsed) != 1 else "")])
+        except Exception as e:  # noqa: BLE001
+            notes.append(["Holdings", f"skipped: {e}"])
+
+        # --- performance over the period ------------------------------------
+        try:
+            held = [p for p in parsed if p.symbol in known]
+            if held:
+                syms = sorted({p.symbol for p in held})
+                with ThreadPoolExecutor(max_workers=min(8, len(syms))) as ex:
+                    hists = list(ex.map(
+                        lambda s: data.get_history(s, req.period), syms))
+                histories = {h.symbol: h.to_dict() for h in hists}
+                bench = None
+                if req.benchmark:
+                    try:
+                        b = data.get_history(req.benchmark, req.period)
+                        bench = {"symbol": b.symbol, "dates": b.dates,
+                                 "closes": b.closes}
+                    except Exception:  # noqa: BLE001
+                        bench = None
+                cmp_out = compare.compare_positions(
+                    held, histories, quotes, req.period, bench)
+                sheets[f"Performance {req.period}"] = compare.to_csv_rows(
+                    cmp_out["positions"])
+                if cmp_out.get("benchmark"):
+                    sheets["Benchmark"] = [["metric", "value"]] + [
+                        [k, v] for k, v in cmp_out["benchmark"].items()]
+                notes.append([f"Performance {req.period}", "included"])
+        except Exception as e:  # noqa: BLE001
+            notes.append(["Performance", f"skipped: {e}"])
+
+        # --- dividend income -------------------------------------------------
+        try:
+            def income_for(sym):
+                try:
+                    return sym, (data.get_insights(sym) or {}).get("income", {}) or {}
+                except Exception:  # noqa: BLE001
+                    return sym, {}
+
+            held = [p for p in parsed if p.symbol in known]
+            if held:
+                syms = sorted({p.symbol for p in held})
+                with ThreadPoolExecutor(max_workers=min(8, len(syms))) as ex:
+                    income_map = dict(ex.map(income_for, syms))
+                inc = income.portfolio_income(held, quotes, income_map)
+                if any(r.get("annual_income") for r in inc["positions"]):
+                    sheets["Dividend Income"] = income.to_csv_rows(inc["positions"])
+                    notes.append(["Dividend Income", "included"])
+        except Exception as e:  # noqa: BLE001
+            notes.append(["Dividend Income", f"skipped: {e}"])
+
+    # --- realised gains -----------------------------------------------------
+    if sold:
+        try:
+            sheets["Realized Gains"] = realized.to_csv_rows(sold)
+            summary = realized.realized_summary(sold)
+            sheets["Realized Summary"] = [["metric", "value"]] + [
+                [k, v if not isinstance(v, dict) else
+                 f"{v.get('symbol')} ({v.get('pnl')})"]
+                for k, v in summary.items()]
+            by_year = realized.realized_by_year(sold)
+            if by_year:
+                sheets["Realized By Year"] = [
+                    ["year", "n_sales", "total_pnl", "short_term_pnl",
+                     "long_term_pnl", "win_rate_pct"]
+                ] + [[y["year"], y["n_sales"], y["total_pnl"], y["short_term_pnl"],
+                      y["long_term_pnl"], y["win_rate_pct"]] for y in by_year]
+            notes.append(["Realized Gains", f"{len(sold)} closed trade" + ("s" if len(sold) != 1 else "")])
+        except Exception as e:  # noqa: BLE001
+            notes.append(["Realized Gains", f"skipped: {e}"])
+
+    if not sheets:
+        raise HTTPException(
+            422, "Nothing to export yet — add a symbol or a position first.")
+
+    unknown = [q.symbol for q in quotes if q.not_found]
+    if unknown:
+        notes.append(["Not found", ", ".join(unknown)])
+    notes.append(["Exported", datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")])
+    sheets["About"] = notes
+
+    try:
+        body = exports.sheets_to_xlsx(sheets)
+    except exports.XlsxUnavailable as e:
+        raise HTTPException(501, str(e))
+    stamp = datetime.utcnow().strftime("%Y-%m-%d")
+    return Response(
+        content=body,
+        media_type="application/vnd.openxmlformats-officedocument."
+                   "spreadsheetml.sheet",
+        headers={"Content-Disposition":
+                 f"attachment; filename=stock-analysis-{stamp}.xlsx"})
 
 
 @app.post("/api/portfolio/compare")

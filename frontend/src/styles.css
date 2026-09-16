@@ -968,3 +968,63 @@ button.icon.sell:hover { background: var(--accent); color: #0d1117; }
   .alert-form select { flex: 1 1 100%; }
   .lt-list li { grid-template-columns: 60px 1fr auto; }
 }
+
+/* =========================================================================
+   Export menu — one primary action, with the pieces behind a caret.
+   ========================================================================= */
+.export-wrap { position: relative; display: inline-flex; align-items: center; }
+
+.export-main {
+  padding: 10px 16px; border: none; border-radius: 8px 0 0 8px;
+  background: var(--pos); color: #0d1117; font-weight: 700;
+  font-size: 0.95rem; font-family: inherit; cursor: pointer;
+  white-space: nowrap; transition: filter 0.15s;
+}
+.export-main:hover:not(:disabled) { filter: brightness(1.1); }
+.export-main:disabled, .export-caret:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.export-caret {
+  padding: 10px 11px; border: none; border-left: 1px solid rgba(0,0,0,0.25);
+  border-radius: 0 8px 8px 0; background: var(--pos); color: #0d1117;
+  font-size: 0.8rem; cursor: pointer; font-family: inherit;
+}
+.export-caret:hover:not(:disabled) { filter: brightness(1.1); }
+
+.export-pop {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+  width: min(330px, 88vw); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 12px; padding: 8px;
+  box-shadow: 0 14px 40px rgba(0,0,0,0.5);
+}
+.export-hint { margin: 4px 8px 8px; font-size: 0.75rem; color: var(--muted);
+  line-height: 1.5; }
+
+.export-pop button, .export-pop .export-link {
+  display: flex; gap: 10px; align-items: flex-start; width: 100%;
+  text-align: left; padding: 9px 10px; border: none; border-radius: 8px;
+  background: none; color: var(--text); cursor: pointer;
+  font-family: inherit; font-size: 0.85rem; text-decoration: none;
+}
+.export-pop button:hover, .export-pop .export-link:hover {
+  background: rgba(88, 166, 255, 0.1);
+}
+.export-pop button:disabled { opacity: 0.5; cursor: not-allowed; }
+.export-pop strong { display: block; font-weight: 600; }
+.export-pop em { display: block; font-style: normal; color: var(--muted);
+  font-size: 0.74rem; margin-top: 2px; line-height: 1.45; }
+.ex-icon { flex: 0 0 18px; font-size: 0.95rem; line-height: 1.4; }
+.export-sep { height: 1px; background: var(--border); margin: 6px 4px; }
+.export-error { margin-left: 10px; color: var(--neg); font-size: 0.78rem;
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+
+@media (max-width: 768px) {
+  .export-wrap { width: 100%; }
+  .export-main { flex: 1; }
+  .export-pop { right: auto; left: 0; width: min(330px, 92vw); }
+}
+
+/* The export control is interactive chrome — hide it when printing to PDF. */
+@media print {
+  .export-wrap { display: none !important; }
+}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { analyze, quotes, downloadCsvUrl, downloadXlsxUrl, holdings as fetchHoldings } from "../api.js";
+import { analyze, quotes, holdings as fetchHoldings } from "../api.js";
 import { useRealtime } from "../useRealtime.js";
 import { getMode, isHidden } from "../modes.js";
 import { loadPositions, savePositions } from "../positions.js";
@@ -22,6 +22,7 @@ import HoldingsPanel from "./HoldingsPanel.jsx";
 import PositionsPanel from "./PositionsPanel.jsx";
 import ComparePanel from "./ComparePanel.jsx";
 import BeginnerBrief from "./BeginnerBrief.jsx";
+import ExportMenu from "./ExportMenu.jsx";
 import BacktestPanel from "./BacktestPanel.jsx";
 import IncomePanel from "./IncomePanel.jsx";
 import CorrelationPanel from "./CorrelationPanel.jsx";
@@ -29,7 +30,10 @@ import PortfolioForecastPanel from "./PortfolioForecastPanel.jsx";
 import AlertsPanel from "./AlertsPanel.jsx";
 import RealizedPanel from "./RealizedPanel.jsx";
 
-const PERIODS = ["1mo", "3mo", "6mo", "1y", "2y", "5y"];
+// Window used for the analysis fetch and the AI context. The chart and the
+// gain/loss panel each carry their own timeframe picker, so a third selector
+// in the controls bar changed nothing visible and only confused people.
+const DEFAULT_PERIOD = "6mo";
 const LS_SYMBOLS = "sae:symbols";
 const LS_FOCUSED = "sae:focused";
 const POLL_INTERVAL = 30000;
@@ -41,7 +45,7 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
   const [symbolsInput, setSymbolsInput] = useState(
     () => initialSymbols || localStorage.getItem(LS_SYMBOLS) || "AAPL, MSFT, NVDA"
   );
-  const [period, setPeriod] = useState("6mo");
+  const [period] = useState(DEFAULT_PERIOD);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -150,15 +154,6 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
     if (!symbols.includes(s)) setSymbolsInput([...symbols, s].join(", "));
   }
 
-  function downloadJson() {
-    if (!data) return;
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "analysis.json";
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a); URL.revokeObjectURL(url);
-  }
-
   // Check alerts whenever prices move. This piggybacks on data the page is
   // already fetching, which is what makes alerts free — and also why they only
   // work while a tab is open.
@@ -228,20 +223,11 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
           placeholder="AAPL, MSFT, NVDA"
           onKeyDown={(e) => e.key === "Enter" && runAnalysis()}
         />
-        <select value={period} onChange={(e) => setPeriod(e.target.value)}>
-          {PERIODS.map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
         <button onClick={runAnalysis} disabled={loading || !symbols.length}>
           {loading ? "Analyzing…" : "Analyze"}
         </button>
-        {data && (
-          <>
-            <a className="download" href={downloadCsvUrl(symbols, period)}>⬇ CSV</a>
-            <a className="download" href={downloadXlsxUrl(symbols, period)}>⬇ Excel</a>
-            <button className="ghost" onClick={downloadJson}>⬇ JSON</button>
-            <button className="ghost" onClick={() => window.print()}>🖨 PDF</button>
-          </>
-        )}
+        <ExportMenu symbols={symbols} positions={positions} sales={sales}
+                    period={period} data={data} />
       </section>
       {data && <p className="muted" style={{ fontSize: "0.78rem", margin: "4px 0 0" }}>
         {live

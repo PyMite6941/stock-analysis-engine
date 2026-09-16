@@ -4,6 +4,9 @@
 # FINNHUB_API_KEY in the Vercel env (requests handles that path).
 fastapi>=0.115
 pydantic>=2.7
+# imported directly by backend/middleware.py, so pin it rather than
+# relying on it arriving as a FastAPI transitive dependency
+starlette>=0.37
 httpx>=0.27
 requests>=2.31
 yfinance>=0.2.40

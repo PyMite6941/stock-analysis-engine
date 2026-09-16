@@ -197,3 +197,14 @@ export async function exportRealized(sales, format = "csv") {
   const blob = await postBlob("/api/portfolio/realized/export", { sales, format });
   saveBlob(blob, `realized_gains.${format === "xlsx" ? "xlsx" : "csv"}`);
 }
+
+// One click, one file. Everything the user has — watchlist analysis, holdings,
+// performance, dividends and closed trades — as a single multi-sheet workbook,
+// because "export my data" almost never means "give me six separate files".
+export async function exportEverything({ symbols = [], positions = [], sales = [],
+                                         period = "6mo", benchmark = "SPY" } = {}) {
+  const blob = await postBlob("/api/export/all",
+    { symbols, positions, sales, period, benchmark });
+  const stamp = new Date().toISOString().slice(0, 10);
+  saveBlob(blob, `stock-analysis-${stamp}.xlsx`);
+}
