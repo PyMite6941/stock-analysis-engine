@@ -23,7 +23,7 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 logger = logging.getLogger("stock-engine.data")
@@ -157,6 +157,164 @@ class Candles:
 
 
 # ---------------------------------------------------------------------------
+# Keyless fallback: Yahoo's public chart endpoint
+# ---------------------------------------------------------------------------
+# yfinance is a scraper. It performs a cookie/crumb handshake against Yahoo and
+# that handshake is the part that breaks — on throttled cloud IPs, and whenever
+# Yahoo changes it. The v8 chart endpoint underneath needs no cookie, no crumb,
+# no API key and no account, so it keeps working when the wrapper does not.
+#
+# This is deliberately a SECOND PATH rather than a replacement: yfinance stays
+# primary because it also supplies fundamentals, statistics and insights that
+# this endpoint has no equivalent for. The fallback covers prices only, which is
+# the part everything else is built on.
+_YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+
+# Yahoo serves a browser-ish UA far more reliably than a bare library default.
+_YAHOO_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/131.0.0.0 Safari/537.36"),
+    "Accept": "application/json,text/plain,*/*",
+}
+
+# The app's interval names map onto Yahoo's directly except for 1h/3h.
+_YAHOO_INTERVAL = {
+    "1m": "1m", "2m": "2m", "5m": "5m", "15m": "15m", "30m": "30m",
+    "1h": "60m", "3h": "60m", "1d": "1d", "1wk": "1wk", "1mo": "1mo",
+}
+
+
+def yahoo_chart(symbol: str, period: str = "6mo", interval: str = "1d") -> Candles:
+    """Fetch OHLCV straight from Yahoo's chart API. No key, no auth.
+
+    Returns empty Candles on any failure — callers already treat an empty series
+    as "no data", and a fallback that raises would defeat the point.
+    """
+    import requests
+
+    sym = symbol.upper()
+    native = _YAHOO_INTERVAL.get(interval, "1d")
+    intraday = interval.endswith(("m", "h"))
+    try:
+        r = requests.get(
+            _YAHOO_CHART.format(symbol=sym),
+            params={"range": period, "interval": native,
+                    "includePrePost": "true" if intraday else "false"},
+            headers=_YAHOO_HEADERS, timeout=20)
+        r.raise_for_status()
+        result = (r.json().get("chart") or {}).get("result") or []
+        if not result:
+            return Candles(sym, [], [], [], [], [], [])
+        block = result[0]
+        stamps = block.get("timestamp") or []
+        quote = ((block.get("indicators") or {}).get("quote") or [{}])[0]
+    except Exception as e:  # noqa: BLE001 — a failed fallback is just no data
+        logger.warning("Yahoo chart fallback failed for %s: %s", sym, e)
+        return Candles(sym, [], [], [], [], [], [])
+
+    if not stamps:
+        return Candles(sym, [], [], [], [], [], [])
+
+    # Intraday timestamps are epoch UTC, but the rest of the app encodes
+    # exchange wall-clock as if it were UTC (the chart axis formats with
+    # timeZone:'UTC' to match). Shift by the exchange offset so the two paths
+    # produce identical strings for the same bar.
+    offset = (block.get("meta") or {}).get("gmtoffset") or 0
+    fmt = "%Y-%m-%d %H:%M" if intraday else "%Y-%m-%d"
+
+    dates, o, h, l, c, v = [], [], [], [], [], []
+    for i, ts in enumerate(stamps):
+        row = [(quote.get(k) or [None] * len(stamps))[i]
+               for k in ("open", "high", "low", "close", "volume")]
+        # Yahoo pads gaps with nulls; drop those bars rather than interpolating.
+        if any(x is None for x in row[:4]):
+            continue
+        # fromtimestamp(..., utc) then drop the tzinfo: utcfromtimestamp is
+        # deprecated, and we want a naive stamp carrying exchange wall-clock.
+        dates.append(datetime.fromtimestamp(
+            ts + (offset if intraday else 0), timezone.utc
+        ).replace(tzinfo=None).strftime(fmt))
+        o.append(round(float(row[0]), 4))
+        h.append(round(float(row[1]), 4))
+        l.append(round(float(row[2]), 4))
+        c.append(round(float(row[3]), 4))
+        v.append(float(row[4] or 0))
+
+    candles = Candles(sym, dates, o, h, l, c, v)
+    # 3h is not a native Yahoo interval — resample from 60m the same way the
+    # yfinance path does, so both sources agree bar for bar.
+    if interval == "3h":
+        candles = _resample_3h(candles)
+    return candles
+
+
+def _resample_3h(c: Candles) -> Candles:
+    """Aggregate 60m bars into 3h groups (open-first, high-max, low-min,
+    close-last, volume-sum)."""
+    if not c.dates:
+        return c
+    dates, o, h, l, cl, v = [], [], [], [], [], []
+    for i in range(0, len(c.dates), 3):
+        chunk = slice(i, i + 3)
+        dates.append(c.dates[i])
+        o.append(c.open[chunk][0])
+        h.append(max(c.high[chunk]))
+        l.append(min(c.low[chunk]))
+        cl.append(c.close[chunk][-1])
+        v.append(sum(c.volume[chunk]))
+    return Candles(c.symbol, dates, o, h, l, cl, v)
+
+
+def yahoo_quote(symbol: str) -> Optional[Quote]:
+    """Best-effort quote from the same keyless endpoint.
+
+    Carries no P/E or market cap — the chart API doesn't expose them — so those
+    stay None. A quote with a real price and no ratios beats no quote at all.
+    """
+    c_meta_symbol = symbol.upper()
+    try:
+        import requests
+        r = requests.get(
+            _YAHOO_CHART.format(symbol=c_meta_symbol),
+            params={"range": "5d", "interval": "1d"},
+            headers=_YAHOO_HEADERS, timeout=20)
+        r.raise_for_status()
+        result = (r.json().get("chart") or {}).get("result") or []
+        if not result:
+            return None
+        meta = result[0].get("meta") or {}
+        closes = [x for x in
+                  (((result[0].get("indicators") or {}).get("quote") or [{}])[0]
+                   .get("close") or []) if x is not None]
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Yahoo quote fallback failed for %s: %s", c_meta_symbol, e)
+        return None
+
+    price = meta.get("regularMarketPrice") or (closes[-1] if closes else None)
+    if not price:
+        return None
+    # Order matters. `chartPreviousClose` is the close BEFORE the requested
+    # range — over a 5-day window that's last week, and using it reported a
+    # 5-day move as if it were today's change (+5.4% when the stock was down
+    # 0.5%). The prior daily bar is the real previous close, so prefer it and
+    # keep chartPreviousClose only as a last resort for a 1-bar response.
+    prev = (meta.get("previousClose")
+            or (closes[-2] if len(closes) > 1 else None)
+            or meta.get("chartPreviousClose")
+            or price)
+    change = price - prev if prev else 0.0
+    return Quote(
+        symbol=c_meta_symbol,
+        name=meta.get("longName") or meta.get("shortName") or c_meta_symbol,
+        price=round(float(price), 4),
+        change=round(float(change), 4),
+        change_pct=round(change / prev * 100, 4) if prev else 0.0,
+        currency=meta.get("currency") or "USD",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Providers
 # ---------------------------------------------------------------------------
 class YFinanceProvider:
@@ -191,8 +349,16 @@ class YFinanceProvider:
         prev = (fast.get("previous_close") or meta.get("regularMarketPreviousClose")
                 or meta.get("previousClose") or price)
         # Yahoo answers an unknown ticker with a near-empty info dict and no
-        # price at all — that's a typo, not an outage.
+        # price at all. That looks identical to the scrape being throttled, so
+        # before calling it a typo, ask the keyless endpoint — otherwise a real
+        # ticker gets reported to the user as "Stock/ETF not found" whenever
+        # yfinance is having a bad minute.
         if not price and not _has_identity(meta):
+            fallback = yahoo_quote(sym)
+            if fallback is not None:
+                logger.info("Yahoo quote fallback served %s", sym)
+                return fallback
+            # Both sources have nothing: now it really is an unknown ticker.
             return Quote(symbol=sym, name=sym, price=0.0, change=0.0,
                          change_pct=0.0, not_found=True)
         change = (price - prev) if price and prev else 0.0
@@ -497,7 +663,15 @@ class YFinanceProvider:
 
         if df is None or df.empty:
             logger.warning("yfinance returned no bars for %s (%s/%s) after %d "
-                           "attempts", symbol, period, interval, _YF_RETRIES)
+                           "attempts; trying the keyless Yahoo chart endpoint",
+                           symbol, period, interval, _YF_RETRIES)
+            # Second path: the scraper's cookie/crumb handshake is the fragile
+            # part, and the raw chart endpoint doesn't use it.
+            fallback = yahoo_chart(symbol, period, interval)
+            if fallback.close:
+                logger.info("Yahoo chart fallback served %d bars for %s",
+                            len(fallback.close), symbol)
+                return _cache_put(key, fallback)
             # Don't cache a failure — the next request should try again rather
             # than serve an empty chart for the full cache TTL.
             return Candles(symbol.upper(), [], [], [], [], [], [])

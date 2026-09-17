@@ -44,11 +44,40 @@ Set in **Project → Settings → Environment Variables**.
 |---|---|---|
 | `GROQ_API_KEY` | ✅ set | `/api/health` reports `ai_configured: true`. |
 | `GROQ_MODEL` | ✅ fine | Verified in production: `provider: groq, model: openai/gpt-oss-120b`. The code default is carrying through, so this does not need setting. |
-| `FINNHUB_API_KEY` | **add this** | Free at <https://finnhub.io/register>, no card. Adding it is enough — the provider auto-upgrades to `hybrid` (real-time quotes from Finnhub, history from yfinance). Yahoo throttles datacentre IPs, so this is the single biggest reliability win available. |
+| `FINNHUB_API_KEY` | optional | Not needed. There is a keyless Yahoo fallback (see below) that covers the throttling case without any signup. If you ever do add a key, the provider auto-upgrades to `hybrid` (real-time quotes from Finnhub, history from yfinance) with no code change. Free at <https://finnhub.io/register> — though their captcha can be obstructive. |
 | `DATA_PROVIDER` | unset | Leave it unset. It only exists to *override* the automatic choice (`yfinance` \| `finnhub` \| `hybrid`). Setting it to `yfinance` while a Finnhub key is present would downgrade you. |
 | `OPENROUTER_API_KEY` | optional | Fallback when Groq fails. |
 | `FINNHUB_WS_TOKEN` | optional | Enables the free client-side live ticker. Use a *throwaway* free key — it is served to the browser. Without it the UI falls back to 30-second polling. |
 | `API_KEY` | unset | Gates every endpoint behind a login screen. Leave unset for a public site. |
+
+## Data resilience (no API key required)
+
+yfinance is a scraper: it does a cookie/crumb handshake with Yahoo, and *that*
+is the part that breaks — on throttled cloud IPs, and whenever Yahoo changes it.
+Underneath sits the v8 chart endpoint, which needs no cookie, no crumb, no key
+and no account. So there are two independent paths:
+
+```
+quotes / history
+  1. yfinance                     primary; also supplies fundamentals,
+                                  statistics and insights
+       | empty or throttled (3 retries, backoff)
+  2. Yahoo v8 chart, keyless      prices only, different code path
+       | still nothing
+  3. reported as unavailable      NOT as "Stock/ETF not found"
+```
+
+Both paths were verified to return identical data (same bar counts, same closes)
+for AAPL, NVDA and SPY, so the fallback is a true drop-in rather than a degraded
+approximation. It carries no P/E or market cap — the chart endpoint doesn't
+expose them — so those read as blank when the fallback is serving.
+
+Step 3 matters as much as step 2: a throttled fetch used to surface to users as
+"Stock/ETF not found" for a perfectly real ticker, because an empty result is
+indistinguishable from a delisted symbol at that layer.
+
+Failed fetches are deliberately **not** cached, so the next request retries
+instead of serving an empty chart for the whole TTL.
 
 ## How it is wired
 
