@@ -1,5 +1,8 @@
 // Thin client for the FastAPI backend. All calls go through Vite's /api proxy.
 
+import { clearStale, markStale } from "./pwa.js";
+import { cachedQuotes, rememberQuotes } from "./quoteCache.js";
+
 const AUTH_KEY = "sae:api_key";
 
 function headers(extra = {}) {
@@ -23,6 +26,14 @@ export class ApiError extends Error {
 }
 
 async function handle(r) {
+  // The service worker sets x-sae-offline when it served a cached copy because
+  // the network or the API failed. Surface it so the UI can say the numbers are
+  // old rather than passing them off as live.
+  if (r.headers?.get?.("x-sae-offline") === "1") {
+    markStale(r.headers.get("x-sae-cached-at"));
+  } else if (r.ok) {
+    clearStale();
+  }
   if (r.status === 401) { sessionStorage.removeItem(AUTH_KEY); window.location.reload(); }
   if (!r.ok) {
     const body = await r.json().catch(() => ({}));
@@ -64,7 +75,21 @@ export function analyze(symbols, period = "6mo") {
 
 export async function quotes(symbols) {
   const q = encodeURIComponent(symbols.join(","));
-  return get(`/api/quotes?symbols=${q}`);
+  try {
+    const res = await get(`/api/quotes?symbols=${q}`);
+    // Every response teaches us about every symbol in it, so a later request
+    // for a different combination can still be answered offline.
+    rememberQuotes(res.quotes);
+    return res;
+  } catch (e) {
+    // Fall back to last-known prices rather than showing nothing. The caller
+    // gets `stale: true` and each quote carries `_stale`, and the page shows a
+    // banner with the age — a price is never passed off as live.
+    const { quotes: cached, cachedAt } = cachedQuotes(symbols);
+    if (!cached.length) throw e;
+    markStale(cachedAt);
+    return { quotes: cached, stale: true, cached_at: cachedAt };
+  }
 }
 
 export async function insights(symbol) {

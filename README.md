@@ -82,6 +82,36 @@ A ticker that doesn't exist returns **404** with
 `{"error": "symbol_not_found", "detail": "Stock/ETF not found: XYZ..."}` rather
 than a generic failure, so the UI can say so plainly.
 
+## Install it on your phone
+
+The app is a PWA: **Add to home screen** gives it its own icon, full-screen
+chrome, and — the part that matters for a finance tool — it keeps working
+without a connection.
+
+Offline you still get your positions, what you paid, your closed trades and
+your alerts, because all of that lives in localStorage anyway. Prices come from
+a **per-symbol cache**: every successful response teaches the app about every
+ticker in it, so a later request for a different combination can still be
+answered. (The service worker's URL-keyed cache can't do this — the home page,
+the analysis page and the 30-second poll all ask for different symbol
+combinations, so URL matching misses almost every time.)
+
+The rule the whole feature is built around: **a stale price is never shown as
+if it were live.** Two distinct states, each with its own banner:
+
+| State | What you see |
+|---|---|
+| No network | "Offline. Your positions still work. Prices are the last ones loaded — not live (3 min ago)." |
+| Network fine, API down | "Showing saved data. Couldn't reach live prices, so these are from 3 min ago. Your own positions and costs are exact." |
+
+That second one exists because `navigator.onLine` cannot detect it — the device
+is connected and only the API is failing, so without an explicit signal the page
+would quietly serve old numbers. The service worker tags cached responses with
+`x-sae-offline` and the age, and the client surfaces both.
+
+Verified with both the API and the web server killed outright: the app still
+booted from cache, rendered every price, and labelled them.
+
 ## Modes
 
 The dashboard has three modes (persisted in localStorage), which change which

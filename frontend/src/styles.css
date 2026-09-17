@@ -1028,3 +1028,103 @@ button.icon.sell:hover { background: var(--accent); color: #0d1117; }
 @media print {
   .export-wrap { display: none !important; }
 }
+
+/* =========================================================================
+   PWA: install prompt, offline notice, and phone ergonomics.
+   ========================================================================= */
+
+.pwa-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; font-size: 0.85rem; line-height: 1.5;
+  border-bottom: 1px solid var(--border);
+  /* Sit under the notch on iPhones (viewport-fit=cover paints edge to edge). */
+  padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
+}
+
+/* Offline is the one that must be impossible to miss — a cached price shown
+   without comment is worse than no price. */
+.pwa-bar.offline {
+  background: #d29922; color: #0d1117; font-weight: 500;
+  position: sticky; top: 0; z-index: 90;
+}
+.pwa-bar.offline strong { font-weight: 800; }
+.pwa-dot { animation: livepulse 1.6s ease-in-out infinite; }
+
+.pwa-bar.update { background: var(--accent); color: #0d1117; justify-content: center; }
+.pwa-bar.install { background: var(--panel); }
+.pwa-bar.ios-hint {
+  background: var(--panel); color: var(--muted); font-size: 0.8rem;
+  border-bottom: 1px solid var(--accent);
+}
+
+.pwa-icon { font-size: 1.2rem; flex: 0 0 auto; }
+.pwa-copy { flex: 1; min-width: 0; }
+.pwa-copy strong { display: block; font-size: 0.88rem; }
+.pwa-copy em {
+  display: block; font-style: normal; color: var(--muted);
+  font-size: 0.76rem; margin-top: 1px;
+}
+
+.pwa-btn {
+  flex: 0 0 auto; padding: 7px 14px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  font-family: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer;
+}
+.pwa-btn.primary { background: var(--accent); color: #0d1117; border-color: transparent; }
+.pwa-btn:hover { filter: brightness(1.1); }
+.pwa-bar.update .pwa-btn { background: #0d1117; color: #fff; border-color: transparent; }
+
+.pwa-x {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+  border: none; background: transparent; color: var(--muted);
+  cursor: pointer; font-size: 0.8rem; line-height: 1;
+}
+.pwa-x:hover { color: var(--text); background: var(--border); }
+
+/* --- installed / standalone ergonomics ---------------------------------- */
+@media (display-mode: standalone) {
+  /* No browser chrome, so the app owns the safe areas itself. */
+  .app, .home {
+    padding-top: calc(16px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+  /* A standalone app has no back button — keep the route control reachable. */
+  .app-header .ghost { position: sticky; top: 0; }
+}
+
+/* --- phone ergonomics --------------------------------------------------- */
+@media (max-width: 768px) {
+  /* 44px is the documented minimum comfortable tap target on both platforms;
+     several controls were sized for a mouse. */
+  .pwa-btn, .export-main, .export-caret,
+  .controls button, .controls .download { min-height: 44px; }
+  .mode-btn { min-height: 44px; }
+  button.icon { min-width: 32px; min-height: 32px; }
+  button.icon.sell { min-height: 32px; padding: 4px 10px; }
+
+  /* Stop iOS zooming the whole page when a field is focused: it does that for
+     any input under 16px. */
+  input, select, textarea { font-size: 16px; }
+
+  .pwa-bar { padding: 9px 12px; gap: 8px; }
+  .pwa-copy em { display: none; }        /* keep the bar to one line */
+
+  /* Wide data tables scroll inside their own container rather than pushing the
+     page sideways. */
+  .table-wrap { -webkit-overflow-scrolling: touch; }
+}
+
+@media (max-width: 480px) {
+  .pwa-copy strong { font-size: 0.82rem; }
+}
+
+/* Connected but serving cached prices — distinct from fully offline, and just
+   as important to say out loud. */
+.pwa-bar.stale {
+  background: var(--panel); color: var(--text);
+  border-bottom: 2px solid #d29922;
+  position: sticky; top: 0; z-index: 89;
+}
+.pwa-bar.stale .pwa-dot { color: #d29922; }

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import HomePage from "./components/HomePage.jsx";
 import AnalysisView from "./components/AnalysisView.jsx";
 import LoginPage from "./components/LoginPage.jsx";
+import InstallBar from "./components/InstallBar.jsx";
 import { loadMode, saveMode } from "./modes.js";
 
 const AUTH_KEY = "sae:api_key";
@@ -59,13 +60,21 @@ export default function App() {
 
   if (route.view === "analysis") {
     return (
-      <AnalysisView
-        key={route.query}
-        initialSymbols={route.query}
-        onHome={() => setRoute({ view: "home", query: null })}
-        {...shared}
-      />
+      <>
+        <InstallBar />
+        <AnalysisView
+          key={route.query}
+          initialSymbols={route.query}
+          onHome={() => setRoute({ view: "home", query: null })}
+          {...shared}
+        />
+      </>
     );
   }
-  return <HomePage onSearch={(q) => setRoute({ view: "analysis", query: q })} {...shared} />;
+  return (
+    <>
+      <InstallBar />
+      <HomePage onSearch={(q) => setRoute({ view: "analysis", query: q })} {...shared} />
+    </>
+  );
 }

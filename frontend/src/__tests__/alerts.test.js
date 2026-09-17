@@ -258,3 +258,58 @@ describe("markToMarket totals", () => {
     expect(out.total_pnl).toBe(0);
   });
 });
+
+describe("quote cache (offline fallback)", () => {
+  beforeEach(() => { installStorage(); });
+
+  it("remembers every symbol in a response and serves any later subset", async () => {
+    // The URL cache misses whenever the symbol combination changes; this one
+    // must not.
+    const { rememberQuotes, cachedQuotes } = await import("../quoteCache.js");
+    rememberQuotes([
+      { symbol: "NVDA", price: 213.9, change: 1.2, change_pct: 0.5, name: "NVIDIA" },
+      { symbol: "AAPL", price: 332.41, change: -1.7, change_pct: -0.5, name: "Apple" },
+    ]);
+    const { quotes } = cachedQuotes(["AAPL"]);        // different combination
+    expect(quotes).toHaveLength(1);
+    expect(quotes[0].price).toBe(332.41);
+    expect(quotes[0]._stale).toBe(true);
+  });
+
+  it("skips not_found and priceless entries", async () => {
+    const { rememberQuotes, cachedQuotes } = await import("../quoteCache.js");
+    rememberQuotes([
+      { symbol: "GOOD", price: 10 },
+      { symbol: "BAD", price: 0, not_found: true },
+    ]);
+    expect(cachedQuotes(["GOOD", "BAD"]).quotes.map((q) => q.symbol)).toEqual(["GOOD"]);
+  });
+
+  it("reports the age of the OLDEST entry used", async () => {
+    const { rememberQuotes, cachedQuotes } = await import("../quoteCache.js");
+    rememberQuotes([{ symbol: "A", price: 1 }]);
+    const { cachedAt } = cachedQuotes(["A"]);
+    expect(cachedAt).toBeInstanceOf(Date);
+    expect(Date.now() - cachedAt.getTime()).toBeLessThan(5000);
+  });
+
+  it("drops entries older than the max age", async () => {
+    const { cachedQuotes, MAX_AGE_MS } = await import("../quoteCache.js");
+    globalThis.localStorage.setItem("sae:quote_cache", JSON.stringify({
+      OLD: { symbol: "OLD", price: 5, at: Date.now() - MAX_AGE_MS - 1000 },
+    }));
+    expect(cachedQuotes(["OLD"]).quotes).toHaveLength(0);
+  });
+
+  it("is case-insensitive on lookup", async () => {
+    const { rememberQuotes, cachedQuotes } = await import("../quoteCache.js");
+    rememberQuotes([{ symbol: "NVDA", price: 213.9 }]);
+    expect(cachedQuotes(["nvda"]).quotes).toHaveLength(1);
+  });
+
+  it("survives corrupt storage", async () => {
+    installStorage({ "sae:quote_cache": "not json" });
+    const { cachedQuotes } = await import("../quoteCache.js");
+    expect(cachedQuotes(["A"]).quotes).toEqual([]);
+  });
+});
