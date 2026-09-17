@@ -169,12 +169,17 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
 
     const { triggered, alerts: updated } = evaluateAlerts(alerts, {
       quotes: quoteMap,
-      positionRows: positions.map((p) => ({
-        symbol: p.symbol,
-        cost: p.shares * p.cost_basis,
-        market_value: quoteMap[p.symbol]?.price
-          ? p.shares * quoteMap[p.symbol].price : 0,
-      })),
+      // Only positions we can actually price. Passing market_value 0 for an
+      // unpriced holding made it look like a total loss, so every
+      // "position loses X%" alert fired instantly and falsely for anything
+      // not in the current watchlist.
+      positionRows: positions
+        .filter((p) => quoteMap[p.symbol]?.price)
+        .map((p) => ({
+          symbol: p.symbol,
+          cost: p.shares * p.cost_basis,
+          market_value: p.shares * quoteMap[p.symbol].price,
+        })),
     });
     if (!triggered.length) return;
     triggered.forEach(notify);

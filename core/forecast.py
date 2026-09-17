@@ -50,7 +50,9 @@ def trend_projection(closes: list[float], horizons: dict[str, int] | None = None
     it that way.
     """
     horizons = horizons or HORIZONS
-    logs = [math.log(c) for c in closes if c and c > 0]
+    # isfinite as well as > 0: log(inf) is inf, which poisons the whole fit
+    # into NaN rather than raising, so it fails silently and looks like data.
+    logs = [math.log(c) for c in closes if c and math.isfinite(c) and c > 0]
     if len(logs) < 10:
         return {}
 
@@ -361,6 +363,10 @@ def support_resistance(high: list[float], low: list[float], close: list[float],
     if n < swing * 2 + 5 or len(high) != n or len(low) != n:
         return {}
     last = close[-1]
+    # Everything below divides by a price. A halted or delisted ticker can come
+    # back as a series of zeros, which used to raise ZeroDivisionError.
+    if not last or not math.isfinite(last) or last <= 0:
+        return {}
 
     highs, lows = [], []
     for i in range(swing, n - swing):
@@ -370,10 +376,15 @@ def support_resistance(high: list[float], low: list[float], close: list[float],
             lows.append(low[i])
 
     # Cluster within 1.5% of each other; touch count = how many pivots agree.
+    # Drop unusable pivots before clustering, so the tolerance division below
+    # always has a positive denominator.
+    highs = [x for x in highs if x and math.isfinite(x) and x > 0]
+    lows = [x for x in lows if x and math.isfinite(x) and x > 0]
+
     def cluster(levels):
         out = []
         for lv in sorted(levels):
-            if out and out[-1]["price"] and abs(lv - out[-1]["price"]) / out[-1]["price"] < 0.015:
+            if out and out[-1]["price"] > 0 and abs(lv - out[-1]["price"]) / out[-1]["price"] < 0.015:
                 grp = out[-1]
                 grp["touches"] += 1
                 grp["price"] = (grp["price"] * (grp["touches"] - 1) + lv) / grp["touches"]

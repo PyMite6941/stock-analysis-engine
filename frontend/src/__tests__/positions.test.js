@@ -94,12 +94,18 @@ describe("markToMarket", () => {
     expect(out.total_pnl_pct).toBeCloseTo(18.86, 2);
   });
 
-  it("leaves unpriced rows null but still counts their cost", () => {
+  it("shows an unpriced lot's own cost but keeps it out of the TOTALS", () => {
+    // This test previously asserted total_cost === 50, which locked in a bug:
+    // counting an unpriced lot's cost while its value stayed 0 reported it as
+    // a 100% loss. The row still shows what it cost; the totals only cover
+    // lots that could actually be marked to market.
     const out = markToMarket(
       [{ symbol: "NOPE", shares: 5, cost_basis: 10 }], {});
+    expect(out.rows[0].cost).toBe(50);
     expect(out.rows[0].market_value).toBeNull();
-    expect(out.total_cost).toBe(50);
+    expect(out.total_cost).toBe(0);
     expect(out.total_value).toBe(0);
+    expect(out.total_pnl).toBe(0);
   });
 });
 

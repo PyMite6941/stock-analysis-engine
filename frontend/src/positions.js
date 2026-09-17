@@ -89,13 +89,16 @@ export function symbolsOf(list) {
 // moving between server refreshes when a live tick arrives. The server's numbers
 // win whenever they're available.
 export function markToMarket(list, priceBySymbol) {
+  // Totals count PRICED lots only, on both sides. Adding an unpriced lot's
+  // cost while its value stayed 0 reported it as a 100% loss and dragged the
+  // portfolio P/L down by the whole position. core/positions.py does the same.
   let cost = 0;
   let value = 0;
   const rows = list.map((p) => {
     const price = priceBySymbol[p.symbol];
     const lotCost = p.shares * p.cost_basis;
-    cost += lotCost;
     if (!price) return { ...p, cost: lotCost, price: null, market_value: null, pnl: null };
+    cost += lotCost;
     const mv = p.shares * price;
     value += mv;
     return {

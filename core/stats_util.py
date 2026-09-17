@@ -11,12 +11,21 @@ import math
 
 
 def log_returns(closes: list[float]) -> list[float]:
-    """Continuously-compounded returns. Skips non-positive prices."""
+    """Continuously-compounded returns. Skips non-positive or non-finite prices.
+
+    isfinite matters as much as the positivity check: `inf > 0` is True, so an
+    infinite price slipped through and made `cur / prev` collapse to 0.0, and
+    math.log(0.0) raises ValueError rather than returning -inf. One corrupt bar
+    could therefore crash every downstream statistic.
+    """
     out = []
     for i in range(1, len(closes)):
         prev, cur = closes[i - 1], closes[i]
-        if prev and cur and prev > 0 and cur > 0:
-            out.append(math.log(cur / prev))
+        if (prev and cur and math.isfinite(prev) and math.isfinite(cur)
+                and prev > 0 and cur > 0):
+            r = math.log(cur / prev)
+            if math.isfinite(r):
+                out.append(r)
     return out
 
 

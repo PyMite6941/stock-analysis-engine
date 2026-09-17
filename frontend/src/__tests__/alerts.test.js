@@ -197,3 +197,64 @@ describe("sales store", () => {
     expect(loadSales()).toEqual([]);
   });
 });
+
+describe("alert false positives", () => {
+  beforeEach(() => { installStorage(); });
+
+  it("does not fire a position-loss alert for an UNPRICED holding", () => {
+    // Regression: AnalysisView passed market_value 0 when a holding had no
+    // quote, which reads as -100% and fired every position_loss alert at once.
+    const list = addAlert([], { type: "position_loss", symbol: "NVDA", threshold: 10 });
+    const { triggered } = evaluate(list, {
+      quotes: {},
+      positionRows: [],          // unpriced holdings are filtered out upstream
+    });
+    expect(triggered).toHaveLength(0);
+  });
+
+  it("still fires when the holding IS priced and really is down", () => {
+    const list = addAlert([], { type: "position_loss", symbol: "NVDA", threshold: 10 });
+    const { triggered } = evaluate(list, {
+      quotes: { NVDA: { price: 100 } },
+      positionRows: [{ symbol: "NVDA", cost: 1000, market_value: 800 }],
+    });
+    expect(triggered).toHaveLength(1);
+    expect(triggered[0].actual).toBeCloseTo(-20, 1);
+  });
+
+  it("ignores a position row with zero cost rather than dividing by it", () => {
+    const list = addAlert([], { type: "position_gain", symbol: "X", threshold: 5 });
+    const { triggered } = evaluate(list, {
+      quotes: { X: { price: 10 } },
+      positionRows: [{ symbol: "X", cost: 0, market_value: 100 }],
+    });
+    expect(triggered).toHaveLength(0);
+  });
+});
+
+describe("markToMarket totals", () => {
+  beforeEach(() => { installStorage(); });
+
+  it("excludes an unpriced lot from BOTH cost and value", async () => {
+    // Regression: cost included the unpriced lot while value did not, so one
+    // unquotable holding reported as a total loss of its full cost.
+    const { markToMarket } = await import("../positions.js");
+    const out = markToMarket(
+      [{ symbol: "NVDA", shares: 10, cost_basis: 100 },
+       { symbol: "NOQUOTE", shares: 10, cost_basis: 500 }],
+      { NVDA: 120 });
+    expect(out.total_cost).toBe(1000);        // NOQUOTE's 5000 excluded
+    expect(out.total_value).toBe(1200);
+    expect(out.total_pnl).toBe(200);          // was -4800 before the fix
+    expect(out.total_pnl_pct).toBeCloseTo(20, 5);
+  });
+
+  it("still lists the unpriced lot with its cost, just unvalued", async () => {
+    const { markToMarket } = await import("../positions.js");
+    const out = markToMarket(
+      [{ symbol: "NOQUOTE", shares: 10, cost_basis: 500 }], {});
+    expect(out.rows[0].cost).toBe(5000);
+    expect(out.rows[0].market_value).toBeNull();
+    expect(out.total_pnl).toBe(0);
+  });
+});
