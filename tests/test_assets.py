@@ -146,3 +146,18 @@ def test_equity_is_not_marked_continuous():
              "volume": [1.0] * 2}
     out = daytrade.daytrade_levels("AAPL", _candles(dates), daily, assets.EQUITY)
     assert out["continuous"] is False
+
+
+# --- provider delegation ---------------------------------------------------
+def test_finnhub_delegates_classes_it_cannot_quote():
+    """Finnhub's /quote and /stock/profile2 are equities-only, so crypto came
+    back zeroed and was reported as an unknown ticker."""
+    from core.data import FinnhubProvider
+    for symbol in ("BTC-USD", "ETH-USD", "^GSPC", "VFIAX"):
+        assert assets.classify(symbol) in FinnhubProvider._DELEGATED, symbol
+
+
+def test_equities_are_not_delegated():
+    from core.data import FinnhubProvider
+    assert assets.classify("AAPL", "EQUITY") not in FinnhubProvider._DELEGATED
+    assert assets.classify("SPY", "ETF") not in FinnhubProvider._DELEGATED

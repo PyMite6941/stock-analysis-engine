@@ -713,14 +713,41 @@ class FinnhubProvider:
         r.raise_for_status()
         return r.json()
 
+    # Finnhub's /quote and /stock/profile2 are equities-only. Crypto, indices
+    # and mutual funds come back zeroed, which is indistinguishable from an
+    # unknown ticker — so BTC-USD was reported to the user as "Stock/ETF not
+    # found". Those classes are delegated to yfinance instead.
+    _DELEGATED = {"crypto", "index", "mutual_fund", "currency"}
+
+    def _yf(self):
+        if getattr(self, "_yf_provider", None) is None:
+            self._yf_provider = YFinanceProvider()
+        return self._yf_provider
+
     def quotes(self, symbols: list[str]) -> list[Quote]:
+        from . import assets
         out: list[Quote] = []
         for sym in symbols:
             sym = sym.upper()
+            if assets.classify(sym) in self._DELEGATED:
+                try:
+                    out.extend(self._yf().quotes([sym]))
+                    continue
+                except Exception:  # noqa: BLE001 — fall through and try Finnhub
+                    pass
             q = self._get("/quote", symbol=sym)            # c=current, pc=prev close
             profile = self._get("/stock/profile2", symbol=sym)
             # Finnhub answers an unknown ticker with zeroed quote + empty profile.
             if not q.get("c") and not profile.get("name"):
+                # Before calling it unknown, let yfinance have a go — it covers
+                # everything Finnhub's equity endpoints do not.
+                try:
+                    alt = self._yf().quotes([sym])
+                    if alt and not alt[0].not_found:
+                        out.extend(alt)
+                        continue
+                except Exception:  # noqa: BLE001
+                    pass
                 out.append(Quote(symbol=sym, name=sym, price=0.0, change=0.0,
                                  change_pct=0.0, not_found=True))
                 continue
@@ -897,7 +924,11 @@ class HybridProvider(YFinanceProvider):
         self._fh = FinnhubProvider()  # raises if FINNHUB_API_KEY missing
 
     def _quote_one(self, sym: str) -> Quote:
+        from . import assets
         sym = sym.upper()
+        # Skip the Finnhub round trip entirely for classes it cannot quote.
+        if assets.classify(sym) in FinnhubProvider._DELEGATED:
+            return super()._quote_one(sym)
         try:
             q = self._fh._get("/quote", symbol=sym)
             price, prev = q.get("c") or 0.0, q.get("pc") or 0.0

@@ -12,6 +12,29 @@ function getToken() {
   return _tokenPromise;
 }
 
+// Finnhub's stream needs an EXCHANGE-PREFIXED symbol for crypto: plain
+// "BTC-USD" is subscribed successfully and then never ticks, because that is a
+// Yahoo ticker, not a Finnhub one. Coinbase is used rather than Binance so the
+// pair is genuinely USD — a USDT pair would quote a slightly different number
+// from the rest of the app and nothing would explain the discrepancy.
+//
+// Trades also come back keyed by the FINNHUB symbol, so the mapping has to be
+// reversible or every tick lands under a key nothing is looking at. 24/7
+// markets are exactly where a live price matters most, since there is no close
+// to fall back on.
+const CRYPTO_RE = /^([A-Z0-9]{2,10})-(USD|USDT|EUR|GBP)$/;
+
+export function toStreamSymbol(symbol) {
+  const m = CRYPTO_RE.exec(String(symbol).toUpperCase());
+  return m ? `COINBASE:${m[1]}-${m[2]}` : symbol;
+}
+
+export function fromStreamSymbol(streamSymbol) {
+  const s = String(streamSymbol || "");
+  const colon = s.indexOf(":");
+  return colon === -1 ? s : s.slice(colon + 1);
+}
+
 /**
  * Free client-side real-time prices via Finnhub's WebSocket.
  *   - browser connects directly to wss://ws.finnhub.io (no backend in the path)
@@ -44,12 +67,16 @@ export function useRealtime(symbols) {
         if (cancelled) return;
         setConnected(true);
         symbolsRef.current.forEach((s) =>
-          ws.send(JSON.stringify({ type: "subscribe", symbol: s })));
+          ws.send(JSON.stringify({ type: "subscribe", symbol: toStreamSymbol(s) })));
       };
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === "trade" && msg.data) {
-          for (const t of msg.data) pending[t.s] = { price: t.p, ts: t.t };
+          // Map back, so a COINBASE:BTC-USD tick lands under BTC-USD where the
+          // rest of the app is looking for it.
+          for (const t of msg.data) {
+            pending[fromStreamSymbol(t.s)] = { price: t.p, ts: t.t };
+          }
         }
       };
       ws.onclose = () => {
@@ -75,7 +102,7 @@ export function useRealtime(symbols) {
       try {
         if (ws && ws.readyState === WebSocket.OPEN) {
           symbolsRef.current.forEach((s) =>
-            ws.send(JSON.stringify({ type: "unsubscribe", symbol: s })));
+            ws.send(JSON.stringify({ type: "unsubscribe", symbol: toStreamSymbol(s) })));
         }
         ws && ws.close();
       } catch { /* noop */ }

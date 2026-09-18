@@ -313,3 +313,34 @@ describe("quote cache (offline fallback)", () => {
     expect(cachedQuotes(["A"]).quotes).toEqual([]);
   });
 });
+
+describe("live stream symbol mapping (crypto)", () => {
+  it("prefixes crypto with an exchange so it actually ticks", async () => {
+    // Subscribing with the plain Yahoo ticker succeeds and then never ticks.
+    const { toStreamSymbol } = await import("../useRealtime.js");
+    expect(toStreamSymbol("BTC-USD")).toBe("COINBASE:BTC-USD");
+    expect(toStreamSymbol("ETH-USD")).toBe("COINBASE:ETH-USD");
+  });
+
+  it("leaves equities, ETFs and indices alone", async () => {
+    const { toStreamSymbol } = await import("../useRealtime.js");
+    for (const s of ["AAPL", "SPY", "^GSPC", "EURUSD=X"]) {
+      expect(toStreamSymbol(s)).toBe(s);
+    }
+  });
+
+  it("maps back, so ticks land under the key the app uses", async () => {
+    // Trades return keyed by the FINNHUB symbol; without the reverse mapping
+    // every crypto tick lands somewhere nothing is reading.
+    const { toStreamSymbol, fromStreamSymbol } = await import("../useRealtime.js");
+    for (const s of ["BTC-USD", "ETH-USD", "AAPL", "^GSPC"]) {
+      expect(fromStreamSymbol(toStreamSymbol(s))).toBe(s);
+    }
+  });
+
+  it("strips any exchange prefix on the way back", async () => {
+    const { fromStreamSymbol } = await import("../useRealtime.js");
+    expect(fromStreamSymbol("BINANCE:BTCUSDT")).toBe("BTCUSDT");
+    expect(fromStreamSymbol("AAPL")).toBe("AAPL");
+  });
+});
