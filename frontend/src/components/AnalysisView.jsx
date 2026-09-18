@@ -41,7 +41,7 @@ const POLL_INTERVAL = 30000;
 // The full analysis page. `initialSymbols` (from a home-page search) seeds the
 // watchlist; otherwise it falls back to the saved/default list.
 export default function AnalysisView({ initialSymbols, onHome, theme, toggleTheme,
-                                       mode, setMode }) {
+                                       mode, setMode, onStartTour }) {
   const [symbolsInput, setSymbolsInput] = useState(
     () => initialSymbols || localStorage.getItem(LS_SYMBOLS) || "AAPL, MSFT, NVDA"
   );
@@ -227,6 +227,8 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
         </div>
         <div className="header-actions">
           <ModeSwitch mode={mode} onChange={setMode} />
+          <button className="help-btn" onClick={onStartTour}
+                  title="Show me around" aria-label="Show me around">?</button>
           <button className="theme-btn" onClick={toggleTheme} title="Toggle theme">
             {theme === "dark" ? "☀️" : "🌙"}
           </button>

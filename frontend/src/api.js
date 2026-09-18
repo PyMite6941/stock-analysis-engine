@@ -239,3 +239,16 @@ export async function exportEverything({ symbols = [], positions = [], sales = [
 export function asset(symbol) {
   return get(`/api/asset?symbol=${encodeURIComponent(symbol)}`);
 }
+
+// Read transaction history out of a photo. Returns rows for REVIEW — the
+// caller must not save them without the user confirming, because OCR gets
+// decimal points wrong and a wrong cost basis looks exactly like a right one.
+export async function importPhoto(file, hint) {
+  const form = new FormData();
+  form.append("file", file);
+  if (hint) form.append("hint", hint);
+  const r = await fetch("/api/import/photo", {
+    method: "POST", headers: headers(), body: form,
+  });
+  return (await handle(r)).json();
+}

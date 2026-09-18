@@ -36,7 +36,8 @@ function Card({ q, label, onClick, badge, sub }) {
   );
 }
 
-export default function HomePage({ onSearch, theme, toggleTheme, mode, setMode }) {
+export default function HomePage({ onSearch, theme, toggleTheme, mode, setMode,
+                                   onStartTour }) {
   const [query, setQuery] = useState("");
   const [quotesBySymbol, setQuotesBySymbol] = useState({});
   const [loading, setLoading] = useState(true);
@@ -154,10 +155,14 @@ export default function HomePage({ onSearch, theme, toggleTheme, mode, setMode }
       <div className="hero">
         <div className="logo-mark" style={{ position: "relative" }}>
           📈
-          <button className="theme-btn" onClick={toggleTheme}
-                  style={{ position: "absolute", right: 0, top: 0, fontSize: "0.9rem" }}>
-            {theme === "dark" ? "☀️" : "🌙"}
-          </button>
+          <span className="home-corner">
+            <button className="help-btn" onClick={onStartTour}
+                    title="Show me around" aria-label="Show me around">?</button>
+            <button className="theme-btn" onClick={toggleTheme}
+                    title="Toggle theme">
+              {theme === "dark" ? "☀️" : "🌙"}
+            </button>
+          </span>
         </div>
         <h1>Stock Analysis Engine</h1>
         <p className="tagline">

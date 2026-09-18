@@ -7,6 +7,7 @@ import {
   removePosition, replacePositions, updatePosition,
 } from "../positions.js";
 import Explain from "./Explain.jsx";
+import PhotoImport from "./PhotoImport.jsx";
 
 const BLANK = { symbol: "", shares: "", cost_basis: "", opened: "",
                 openedTime: "", note: "" };
@@ -426,6 +427,14 @@ export default function PositionsPanel({ beginner = false, livePrices = {},
           )}
         </form>
       )}
+
+      <PhotoImport
+        beginner={beginner}
+        onImport={(rows) => {
+          setPositions(mergePositions(positions, rows));
+          flash(`Added ${rows.length} position${rows.length === 1 ? "" : "s"} from the photo.`);
+        }}
+      />
 
       <form className="position-form" onSubmit={submit}>
         <h3 className="sub-head">{editing ? "Edit position" : "Add a position"}</h3>

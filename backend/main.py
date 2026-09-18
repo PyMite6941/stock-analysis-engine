@@ -28,7 +28,7 @@ from pydantic import BaseModel
 
 from core import (assets, backtest, compare, correlation, data, daytrade,
                   forecast, income, indicators, metrics, positions, realized)
-from backend import ai, exports
+from backend import ai, exports, vision
 from backend.middleware import SecurityAndAuthMiddleware, logger
 
 app = FastAPI(title="Stock Analysis Engine", version="0.1.0")
@@ -840,6 +840,34 @@ def portfolio_export(req: ExportRequest):
             headers={"Content-Disposition": "attachment; filename=holdings.xlsx"})
 
     raise HTTPException(400, f"Unsupported format {fmt!r}. Use 'csv' or 'xlsx'.")
+
+
+@app.post("/api/import/photo")
+async def import_photo(file: UploadFile = File(...),
+                       hint: Optional[str] = None):
+    """Read a screenshot of transaction history into candidate rows.
+
+    Returns rows for REVIEW — it deliberately saves nothing. OCR misreads
+    decimals and will produce a plausible wrong number for a smudged cell, so
+    every row comes back with a confidence and the client requires an explicit
+    confirmation before any of it reaches the portfolio.
+    """
+    content = await file.read()
+    if not content:
+        raise HTTPException(422, "That file was empty.")
+    try:
+        out = vision.read_transactions(
+            content, file.content_type or "image/png", hint)
+    except vision.NoVisionProvider as e:
+        raise HTTPException(503, str(e))
+    except vision.ImageTooLarge as e:
+        raise HTTPException(413, str(e))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Could not read that image: {e}")
+    out["filename"] = file.filename
+    return out
 
 
 @app.post("/api/portfolio/import")

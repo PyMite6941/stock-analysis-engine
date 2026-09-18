@@ -3,6 +3,8 @@ import HomePage from "./components/HomePage.jsx";
 import AnalysisView from "./components/AnalysisView.jsx";
 import LoginPage from "./components/LoginPage.jsx";
 import InstallBar from "./components/InstallBar.jsx";
+import Tour from "./components/Tour.jsx";
+import { hasSeenTour } from "./tour.js";
 import { loadMode, saveMode } from "./modes.js";
 
 const AUTH_KEY = "sae:api_key";
@@ -12,6 +14,7 @@ export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem("sae:theme") || "dark");
   // Mode lives at the top so it survives navigation between home and analysis.
   const [mode, setModeState] = useState(loadMode);
+  const [tourOpen, setTourOpen] = useState(false);
   const [apiKey, setApiKey] = useState(() => sessionStorage.getItem(AUTH_KEY));
   const [needsAuth, setNeedsAuth] = useState(null); // null=checking, true/false
 
@@ -41,6 +44,13 @@ export default function App() {
     check();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // First visit only: a tour nobody asked for is an annoyance on the second.
+  useEffect(() => {
+    if (hasSeenTour()) return undefined;
+    const t = setTimeout(() => setTourOpen(true), 1200);
+    return () => clearTimeout(t);
+  }, []);
+
   const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
   const setMode = (id) => { saveMode(id); setModeState(id); };
 
@@ -56,12 +66,14 @@ export default function App() {
     }} />;
   }
 
-  const shared = { theme, toggleTheme, mode, setMode };
+  const shared = { theme, toggleTheme, mode, setMode,
+                   onStartTour: () => setTourOpen(true) };
 
   if (route.view === "analysis") {
     return (
       <>
         <InstallBar />
+        <Tour open={tourOpen} mode={mode} onClose={() => setTourOpen(false)} />
         <AnalysisView
           key={route.query}
           initialSymbols={route.query}
@@ -74,6 +86,7 @@ export default function App() {
   return (
     <>
       <InstallBar />
+      <Tour open={tourOpen} mode={mode} onClose={() => setTourOpen(false)} />
       <HomePage onSearch={(q) => setRoute({ view: "analysis", query: q })} {...shared} />
     </>
   );

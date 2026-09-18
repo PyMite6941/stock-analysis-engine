@@ -82,6 +82,37 @@ A ticker that doesn't exist returns **404** with
 `{"error": "symbol_not_found", "detail": "Stock/ETF not found: XYZ..."}` rather
 than a generic failure, so the UI can say so plainly.
 
+## Guided tour
+
+A `?` button top-right starts a spotlight walkthrough: the page dims, the panel
+being described stays lit, and the view scrolls to it. Steps whose target isn't
+on the page are skipped automatically, so the same tour works on the home page,
+in each of the three modes, and before you have any positions. It opens itself
+once on a first visit and never again; Escape or the arrow keys work throughout.
+
+## Import from a photo
+
+Screenshot a broker's transaction list — or point a phone camera at it — and a
+vision model reads the trades out. `POST /api/import/photo` returns rows and
+saves **nothing**.
+
+That last part is deliberate and non-negotiable. Optical recognition misreads
+decimal points and will produce a confident-looking wrong number for a smudged
+cell, which is the same class of silent error as the Schwab cost-basis bug
+above. So every row comes back with a per-row confidence, a list of fields it
+could not read, and warnings about anything it had to infer. The review table
+is editable inline, rows needing attention are unchecked by default, and
+nothing reaches the portfolio until you press the button.
+
+The prompt tells the model to return `null` rather than guess, to skip
+dividends and transfers, and to say so explicitly when it divides a total by a
+quantity to get a per-unit price.
+
+Needs `GROQ_API_KEY` (or `OPENROUTER_API_KEY`). Without one the button returns
+a clear message rather than failing oddly — typing trades in and CSV import
+both still work. Model is overridable with `GROQ_VISION_MODEL`, defaulting to
+Llama 4 Scout.
+
 ## Crypto, ETFs and mutual funds
 
 The app started as a US-equity tool, and several of its assumptions only hold

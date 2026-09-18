@@ -219,7 +219,18 @@ export default function ChartSection({ symbol, onSymbolChange, symbols }) {
                            return exists ? prev : [...prev, { price, color: "#f0b90b" }];
                          })} />
           ) : (
-            !loading && <div className="muted chart-empty">No candle data for {symbol}.</div>
+            !loading && (
+              <div className="muted chart-empty">
+                <strong>No price history for {symbol}.</strong>
+                <p>
+                  There's a current quote but no chart data. That usually means
+                  the ticker was renamed or delisted and the old symbol is frozen
+                  — MATIC-USD became POL-USD, for example — or that the ticker
+                  belongs to a different asset than you expected. Try searching
+                  the full name to find the current symbol.
+                </p>
+              </div>
+            )
           )}
         </>
       )}
