@@ -315,32 +315,55 @@ describe("quote cache (offline fallback)", () => {
 });
 
 describe("live stream symbol mapping (crypto)", () => {
-  it("prefixes crypto with an exchange so it actually ticks", async () => {
-    // Subscribing with the plain Yahoo ticker succeeds and then never ticks.
-    const { toStreamSymbol } = await import("../useRealtime.js");
-    expect(toStreamSymbol("BTC-USD")).toBe("COINBASE:BTC-USD");
-    expect(toStreamSymbol("ETH-USD")).toBe("COINBASE:ETH-USD");
+  it("subscribes to BOTH exchanges for a USD coin", async () => {
+    // Coinbase is a genuine USD pair so it matches the app's basis, but only
+    // the Binance format appears in Finnhub's published examples. Neither is
+    // guaranteed, so subscribe to both rather than betting on one.
+    const { streamSymbolsFor } = await import("../useRealtime.js");
+    expect(streamSymbolsFor("BTC-USD")).toEqual([
+      "COINBASE:BTC-USD", "BINANCE:BTCUSDT",
+    ]);
+    expect(streamSymbolsFor("ETH-USD")).toEqual([
+      "COINBASE:ETH-USD", "BINANCE:ETHUSDT",
+    ]);
+  });
+
+  it("only uses Coinbase for a non-USD quote currency", async () => {
+    // There is no BTCEUR Tether pair to fall back to.
+    const { streamSymbolsFor } = await import("../useRealtime.js");
+    expect(streamSymbolsFor("BTC-EUR")).toEqual(["COINBASE:BTC-EUR"]);
   });
 
   it("leaves equities, ETFs and indices alone", async () => {
-    const { toStreamSymbol } = await import("../useRealtime.js");
+    const { streamSymbolsFor } = await import("../useRealtime.js");
     for (const s of ["AAPL", "SPY", "^GSPC", "EURUSD=X"]) {
-      expect(toStreamSymbol(s)).toBe(s);
+      expect(streamSymbolsFor(s)).toEqual([s]);
     }
   });
 
-  it("maps back, so ticks land under the key the app uses", async () => {
-    // Trades return keyed by the FINNHUB symbol; without the reverse mapping
-    // every crypto tick lands somewhere nothing is reading.
+  it("maps BOTH exchanges back to the same app ticker", async () => {
+    // A Tether tick must update the BTC-USD row, not invent a BTCUSDT one.
+    const { fromStreamSymbol } = await import("../useRealtime.js");
+    expect(fromStreamSymbol("COINBASE:BTC-USD")).toBe("BTC-USD");
+    expect(fromStreamSymbol("BINANCE:BTCUSDT")).toBe("BTC-USD");
+    expect(fromStreamSymbol("BINANCE:ETHUSDT")).toBe("ETH-USD");
+    expect(fromStreamSymbol("AAPL")).toBe("AAPL");
+  });
+
+  it("round-trips the preferred symbol", async () => {
     const { toStreamSymbol, fromStreamSymbol } = await import("../useRealtime.js");
     for (const s of ["BTC-USD", "ETH-USD", "AAPL", "^GSPC"]) {
       expect(fromStreamSymbol(toStreamSymbol(s))).toBe(s);
     }
   });
 
-  it("strips any exchange prefix on the way back", async () => {
-    const { fromStreamSymbol } = await import("../useRealtime.js");
-    expect(fromStreamSymbol("BINANCE:BTCUSDT")).toBe("BTCUSDT");
-    expect(fromStreamSymbol("AAPL")).toBe("AAPL");
+  it("prefers the real USD pair over the Tether proxy", async () => {
+    // USDT tracks USD to about a tenth of a percent — on an $80k coin that is
+    // a visible discrepancy against the price shown everywhere else.
+    const { preferTick } = await import("../useRealtime.js");
+    expect(preferTick({ source: "COINBASE" }, { source: "BINANCE" })).toBe(false);
+    expect(preferTick({ source: "BINANCE" }, { source: "COINBASE" })).toBe(true);
+    expect(preferTick(undefined, { source: "BINANCE" })).toBe(true);
+    expect(preferTick({ source: "COINBASE" }, { source: "COINBASE" })).toBe(true);
   });
 });

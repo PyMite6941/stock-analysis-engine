@@ -47,7 +47,7 @@ Set in **Project → Settings → Environment Variables**.
 | `FINNHUB_API_KEY` | optional | Not needed. There is a keyless Yahoo fallback (see below) that covers the throttling case without any signup. If you ever do add a key, the provider auto-upgrades to `hybrid` (real-time quotes from Finnhub, history from yfinance) with no code change. Free at <https://finnhub.io/register> — though their captcha can be obstructive. |
 | `DATA_PROVIDER` | unset | Leave it unset. It only exists to *override* the automatic choice (`yfinance` \| `finnhub` \| `hybrid`). Setting it to `yfinance` while a Finnhub key is present would downgrade you. |
 | `OPENROUTER_API_KEY` | optional | Fallback when Groq fails. |
-| `FINNHUB_WS_TOKEN` | optional | Enables the free client-side live ticker. Use a *throwaway* free key — it is served to the browser. Without it the UI falls back to 30-second polling. |
+| `FINNHUB_WS_TOKEN` | optional, **unverified** | Enables the free client-side live ticker. Use a *throwaway* free key — it is served to the browser. Without it the UI falls back to 30-second polling, which works fine for everything including crypto. **The crypto stream path has never been run against a live socket** — there has been no key to test with. The symbol mapping is unit-tested and the app subscribes to both `COINBASE:BTC-USD` and `BINANCE:BTCUSDT` per coin precisely because only the Binance format appears in Finnhub's published examples. If you add a token, watch the browser console for whether crypto ticks actually arrive before trusting the live price. |
 | `API_KEY` | unset | Gates every endpoint behind a login screen. Leave unset for a public site. |
 
 ## Data resilience (no API key required)
