@@ -162,3 +162,68 @@ describe("CSV round trip", () => {
     expect(back.map((r) => r.symbol)).toEqual(["AAPL"]);
   });
 });
+
+describe("import: broker formats and the per-share vs total trap", () => {
+  beforeEach(() => { installStorage(); });
+
+  // "Cost Basis" is the lot TOTAL at Schwab and PER SHARE at Fidelity. Getting
+  // it wrong imported a position 25x too expensive, silently.
+  it("divides a Schwab-style TOTAL cost basis by the share count", () => {
+    const r = csvToPositions("Symbol,Quantity,Price,Cost Basis\nMSFT,25,500.00,10307.50\n");
+    expect(r[0].cost_basis).toBeCloseTo(412.30, 2);
+  });
+
+  it("leaves a Fidelity-style PER-SHARE basis alone", () => {
+    const r = csvToPositions("Symbol,Quantity,Average Cost Basis\nAAPL,10,400.00\n");
+    expect(r[0].cost_basis).toBeCloseTo(400.0, 2);
+  });
+
+  it("round-trips our own export, where cost_basis and price both appear", () => {
+    const r = csvToPositions("symbol,shares,cost_basis,price\nNVDA,400,178.5,212.17\n");
+    expect(r[0].cost_basis).toBeCloseTo(178.5, 2);
+  });
+
+  it("uses price only when it is the sole cost column", () => {
+    expect(csvToPositions("ticker,qty,price\nKO,200,62\n")[0].cost_basis).toBeCloseTo(62, 2);
+  });
+
+  it("divides an explicit Total Cost column", () => {
+    expect(csvToPositions("Symbol,Shares,Total Cost\nKO,200,12400\n")[0].cost_basis)
+      .toBeCloseTo(62, 2);
+  });
+
+  it("never treats today's Last Price as the cost basis", () => {
+    const r = csvToPositions("Symbol,Shares,Cost Basis,Last Price\nAAPL,10,400,331.34\n");
+    expect(r[0].cost_basis).toBeCloseTo(400, 2);
+  });
+
+  it.each([
+    ["Symbol,Shares,Share Price\nVTI,15,300\n", 300],
+    ["Symbol,Shares,Cost Per Share\nX,5,10\n", 10],
+    ["Symbol,Shares,Unit Cost\nX,5,10\n", 10],
+    ["Ticker,Qty,Average Cost\nX,5,10\n", 10],
+  ])("accepts broker header spelling %#", (csv, expected) => {
+    expect(csvToPositions(csv)[0].cost_basis).toBeCloseTo(expected, 2);
+  });
+
+  it.each([
+    ["Symbol,Shares,Cost Basis\nAAPL,10,100\n"],
+    ["Symbol;Shares;Cost Basis\nAAPL;10;100\n"],
+    ["Symbol\tShares\tCost Basis\nAAPL\t10\t100\n"],
+    ["Symbol|Shares|Cost Basis\nAAPL|10|100\n"],
+  ])("sniffs the delimiter %#", (csv) => {
+    const r = csvToPositions(csv);
+    expect(r[0].symbol).toBe("AAPL");
+    expect(r[0].shares).toBe(10);
+    expect(r[0].cost_basis).toBeCloseTo(100, 2);
+  });
+
+  it("keeps a clock time on the open date", () => {
+    const r = csvToPositions("symbol,shares,cost_basis,opened\nTSLA,50,180,2026-09-16 09:45\n");
+    expect(r[0].opened).toBe("2026-09-16 09:45");
+  });
+
+  it("keeps the sign on a short position", () => {
+    expect(csvToPositions("Symbol,Shares,Cost Basis\nTSLA,-5,180\n")[0].shares).toBe(-5);
+  });
+});

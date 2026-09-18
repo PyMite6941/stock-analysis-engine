@@ -134,13 +134,37 @@ _ALIASES = {
     "shares": ("shares", 10), "quantity": ("shares", 9), "qty": ("shares", 9),
     "units": ("shares", 6), "no of shares": ("shares", 8), "amount": ("shares", 2),
 
-    "cost basis": ("cost_basis", 10),
+    # Per-share cost. Real broker spellings — Fidelity writes "Average Cost
+    # Basis", Vanguard writes "Share Price".
     "cost basis per share": ("cost_basis", 10),
-    "cost per share": ("cost_basis", 9),
+    "average cost basis": ("cost_basis", 10),
+    "cost per share": ("cost_basis", 10),
+    "price per share": ("cost_basis", 10),
+    "share price": ("cost_basis", 9),
     "average cost": ("cost_basis", 9), "avg cost": ("cost_basis", 9),
+    "avg price": ("cost_basis", 9), "average price": ("cost_basis", 9),
+    "unit cost": ("cost_basis", 9),
     "purchase price": ("cost_basis", 8), "buy price": ("cost_basis", 8),
-    "entry": ("cost_basis", 6), "entry price": ("cost_basis", 7),
+    "entry price": ("cost_basis", 7), "entry": ("cost_basis", 6),
+    # AMBIGUOUS: Schwab's "Cost Basis" is the TOTAL for the lot, Fidelity's is
+    # per share. Captured here, then resolved against the price column by
+    # _resolve_cost_basis below.
+    "cost basis": ("cost_basis", 5),
     "price": ("cost_basis", 1),   # only if nothing better is present
+
+    # Unambiguously the whole position, never per share. Used to derive a
+    # per-share basis when that's all the file gives us.
+    "total cost": ("total_cost", 10),
+    "total cost basis": ("total_cost", 10),
+    "cost basis total": ("total_cost", 10),
+    "total amount": ("total_cost", 6),
+
+    # Current price, captured only to sanity-check the cost basis. Never used
+    # as the cost basis itself — it is today's price, not what was paid.
+    "last price": ("price_hint", 10),
+    "current price": ("price_hint", 10),
+    "market price": ("price_hint", 9),
+    "last": ("price_hint", 5),
 
     "opened": ("opened", 10), "buy date": ("opened", 9),
     "purchase date": ("opened", 9), "trade date": ("opened", 9),
@@ -169,14 +193,35 @@ def _map_header(header: list) -> dict[int, str]:
     the cost basis.
     """
     best: dict[str, tuple[int, int]] = {}   # field -> (priority, column index)
+    losers: list[tuple[int, str]] = []      # (index, header) that lost a contest
     for i, h in enumerate(header):
         hit = _lookup(h)
         if not hit:
             continue
         field, priority = hit
         if field not in best or priority > best[field][0]:
+            if field in best:
+                losers.append((best[field][1], str(header[best[field][1]])))
             best[field] = (priority, i)
-    return {idx: field for field, (_, idx) in best.items()}
+        else:
+            losers.append((i, str(h)))
+
+    mapping = {idx: field for field, (_, idx) in best.items()}
+
+    # A price column that LOST the cost-basis contest is still valuable: it is
+    # the yardstick that says whether the winning "Cost Basis" was per-share or
+    # a lot total. Schwab emits exactly this shape (Price + Cost Basis), and
+    # dropping the loser meant the total went in as a per-share figure — a
+    # 25-share position imported at 25x its real cost, silently.
+    if "price_hint" not in best:
+        for idx, raw in losers:
+            name = str(raw or "").strip().lower().replace("_", " ")
+            if name in ("price", "last", "last price", "current price",
+                        "market price", "share price"):
+                mapping[idx] = "price_hint"
+                break
+
+    return mapping
 
 
 def _clean_number(v: Any) -> float | None:
@@ -197,6 +242,59 @@ def _clean_number(v: Any) -> float | None:
     return -n if negative else n
 
 
+def _resolve_cost_basis(rec: dict) -> None:
+    """Turn whatever the file gave us into a PER-SHARE cost basis.
+
+    "Cost Basis" means different things at different brokers: Schwab writes the
+    total for the lot, Fidelity writes per share. Getting it wrong is silent and
+    severe — importing Schwab's total as per-share overstated a 25-share
+    position by 25x, and the number looks perfectly plausible on screen.
+
+    Resolved by arithmetic rather than by guessing from the header:
+      * an explicit total column divided by the share count always wins;
+      * otherwise, if dividing the ambiguous value by shares lands it near a
+        price column while the raw value is nowhere near it, it was a total.
+    """
+    shares = rec.get("shares")
+    if not shares:
+        return
+
+    total = rec.pop("total_cost", None)
+    hint = rec.pop("price_hint", None)
+    basis = rec.get("cost_basis")
+
+    # An unambiguous total column is the most reliable signal available.
+    if total and (basis is None or rec.get("_basis_ambiguous")):
+        rec["cost_basis"] = abs(total / shares)
+        rec.pop("_basis_ambiguous", None)
+        return
+
+    if basis is None or not hint or hint <= 0:
+        rec.pop("_basis_ambiguous", None)
+        return
+
+    per_share = abs(basis / shares)
+    # Within 50% of the quoted price counts as "this is a per-share number".
+    near = abs(per_share - hint) / hint < 0.5
+    far = abs(abs(basis) - hint) / hint > 0.5
+    if near and far:
+        rec["cost_basis"] = per_share
+    rec.pop("_basis_ambiguous", None)
+
+
+def sniff_delimiter(text: str) -> str:
+    """Pick the delimiter from the header line.
+
+    Excel writes semicolons in locales where the comma is the decimal
+    separator, and plenty of exports are tab-separated. Sniffing costs nothing
+    and turns a hard failure into a successful import.
+    """
+    first = next((ln for ln in text.splitlines() if ln.strip()), "")
+    counts = {d: first.count(d) for d in (",", ";", "\t", "|")}
+    best = max(counts, key=counts.get)
+    return best if counts[best] else ","
+
+
 def _rows_to_positions(rows: list[list]) -> list[dict]:
     """Map a header row + data rows onto position dicts, skipping junk rows."""
     if not rows:
@@ -205,6 +303,10 @@ def _rows_to_positions(rows: list[list]) -> list[dict]:
     mapping = _map_header(header)
     if "symbol" not in mapping.values():
         raise ValueError(_NO_HEADER)
+    # "Cost Basis" needs resolving; a precise per-share header does not.
+    ambiguous_basis = any(
+        str(h or "").strip().lower() in ("cost basis", "price")
+        for i, h in enumerate(header) if mapping.get(i) == "cost_basis")
 
     out = []
     for row in rows[1:]:
@@ -213,7 +315,7 @@ def _rows_to_positions(rows: list[list]) -> list[dict]:
             if not field or i >= len(row):
                 continue
             val = row[i]
-            if field in ("shares", "cost_basis"):
+            if field in ("shares", "cost_basis", "total_cost", "price_hint"):
                 rec[field] = _clean_number(val)
             elif field == "opened" and val is not None:
                 # Excel hands back datetimes. Keep the clock time when there is
@@ -227,10 +329,15 @@ def _rows_to_positions(rows: list[list]) -> list[dict]:
             elif val is not None and str(val).strip():
                 rec[field] = str(val).strip()
 
+        if ambiguous_basis:
+            rec["_basis_ambiguous"] = True
+        _resolve_cost_basis(rec)
+
         sym = str(rec.get("symbol") or "").strip().upper()
         if not sym or rec.get("shares") is None or rec.get("cost_basis") is None:
             continue
         rec["symbol"] = sym
+        rec["cost_basis"] = round(rec["cost_basis"], 6)
         out.append(rec)
     return out
 
@@ -255,7 +362,15 @@ def _skip_to_header(rows: list[list]) -> list[list]:
 def parse_positions_file(filename: str, content: bytes) -> list[dict]:
     """Parse an uploaded holdings CSV or XLSX into position dicts."""
     name = (filename or "").lower()
-    if name.endswith((".xlsx", ".xlsm")):
+    # A real .xlsx always starts with the ZIP magic bytes. Routing on the
+    # extension alone means a CSV someone saved as .xlsx — or exported from a
+    # tool that mislabels it — dies with "File is not a zip file", which tells
+    # the user nothing useful about a file that is perfectly importable.
+    looks_xlsx = content[:2] == b"PK"
+
+    if name.endswith((".xlsx", ".xlsm")) or looks_xlsx:
+        if not looks_xlsx:
+            return _parse_csv_bytes(content)      # mislabelled; it's text
         if not XLSX_AVAILABLE:
             raise XlsxUnavailable(
                 "XLSX import needs openpyxl (pip install openpyxl). "
@@ -264,6 +379,11 @@ def parse_positions_file(filename: str, content: bytes) -> list[dict]:
         rows = [list(r) for r in wb[wb.sheetnames[0]].iter_rows(values_only=True)]
         return _rows_to_positions(_skip_to_header(rows))
 
+    return _parse_csv_bytes(content)
+
+
+def _parse_csv_bytes(content: bytes) -> list[dict]:
     text = content.decode("utf-8-sig", errors="replace")
-    rows = [r for r in csv.reader(io.StringIO(text)) if any(str(c).strip() for c in r)]
+    reader = csv.reader(io.StringIO(text), delimiter=sniff_delimiter(text))
+    rows = [r for r in reader if any(str(c).strip() for c in r)]
     return _rows_to_positions(_skip_to_header(rows))
