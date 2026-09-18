@@ -25,16 +25,29 @@ import re
 
 import httpx
 
-# Vision-capable models, tried in order. Overridable per provider.
+# Vision-capable models per provider, tried IN ORDER within each provider.
+#
+# A list rather than a single id on purpose. Hosted model names churn — this
+# code shipped once pointing at a Llama 4 Scout id that Groq had already
+# retired, and the only symptom was a 404 from /chat/completions, which reads
+# like a broken URL rather than a missing model. Walking a list means the next
+# rename costs a fallback instead of an outage, and a 404 is treated as "try the
+# next model" rather than "this provider is down".
 _VISION_PROVIDERS = [
-    ("GROQ_API_KEY", "https://api.groq.com/openai/v1",
-     "GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"),
-    ("OPENROUTER_API_KEY", "https://openrouter.ai/api/v1",
-     "OPENROUTER_VISION_MODEL", "meta-llama/llama-4-scout"),
+    ("GROQ_API_KEY", "https://api.groq.com/openai/v1", "GROQ_VISION_MODEL", [
+        "qwen/qwen3.6-27b",
+        "qwen/qwen3.8-27b",
+    ]),
+    ("OPENROUTER_API_KEY", "https://openrouter.ai/api/v1", "OPENROUTER_VISION_MODEL", [
+        "qwen/qwen3-vl-235b-a22b-instruct",
+        "google/gemini-2.0-flash-001",
+    ]),
 ]
 
-# Groq rejects base64 payloads over ~4MB; keep a margin for the JSON envelope.
-MAX_IMAGE_BYTES = 4 * 1024 * 1024
+# Groq allows 20MB per image; base64 inflates by about a third, so cap the raw
+# file below that and leave room for the JSON envelope. Generous enough for a
+# phone photo without inviting a 20MB upload over a mobile connection.
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
 ALLOWED_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"}
 
 EXTRACT_PROMPT = """You are reading a screenshot of a brokerage or crypto \
@@ -89,14 +102,23 @@ class ImageTooLarge(ValueError):
 
 
 def _providers():
-    for env_key, base, model_env, default_model in _VISION_PROVIDERS:
+    """One entry per (provider, model) pair worth trying, in priority order.
+
+    An explicit *_VISION_MODEL env var pins that provider to a single model and
+    skips the fallback list — useful for forcing a known-good id without a
+    redeploy of this file.
+    """
+    for env_key, base, model_env, models in _VISION_PROVIDERS:
         key = os.environ.get(env_key)
-        if key:
+        if not key:
+            continue
+        override = os.environ.get(model_env)
+        for model in ([override] if override else models):
             yield {
                 "name": env_key.replace("_API_KEY", "").lower(),
                 "api_key": key,
                 "base_url": base,
-                "model": os.environ.get(model_env, default_model),
+                "model": model,
             }
 
 
@@ -233,7 +255,9 @@ def read_transactions(image_bytes: bytes, content_type: str,
     }]
 
     last_err: Exception | None = None
+    tried: list[str] = []
     for p in providers:
+        tried.append(f"{p['name']}:{p['model']}")
         try:
             r = httpx.post(
                 f"{p['base_url']}/chat/completions",
@@ -262,4 +286,8 @@ def read_transactions(image_bytes: bytes, content_type: str,
             last_err = e
             continue
 
-    raise RuntimeError(f"Could not read the image. Last error: {last_err}")
+    # Name the models actually attempted: "model not found" and "provider down"
+    # produce the same 404 here, and only the list tells them apart.
+    raise RuntimeError(
+        f"Could not read the image. Tried {', '.join(tried)}. "
+        f"Last error: {last_err}")

@@ -110,8 +110,16 @@ quantity to get a per-unit price.
 
 Needs `GROQ_API_KEY` (or `OPENROUTER_API_KEY`). Without one the button returns
 a clear message rather than failing oddly — typing trades in and CSV import
-both still work. Model is overridable with `GROQ_VISION_MODEL`, defaulting to
-Llama 4 Scout.
+both still work.
+
+Each provider carries a LIST of candidate vision models rather than one id,
+because hosted model names churn. This shipped once pointing at a Llama 4 Scout
+id Groq had already retired, and the only symptom was a `404` from
+`/chat/completions` — which reads like a broken URL, not a missing model. A 404
+now falls through to the next model instead of failing the request, and the
+error names every model it tried. `GROQ_VISION_MODEL` pins a single id and skips
+the list, so a known-good model can be forced from the Vercel dashboard without
+a redeploy.
 
 ## Crypto, ETFs and mutual funds
 

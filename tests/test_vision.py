@@ -135,3 +135,83 @@ def test_no_key_gives_an_actionable_message(monkeypatch):
         monkeypatch.delenv(k, raising=False)
     with pytest.raises(vision.NoVisionProvider, match="GROQ_API_KEY"):
         vision.read_transactions(b"x", "image/png")
+
+
+# --- provider/model fallback chain ----------------------------------------
+def test_each_provider_offers_several_models(monkeypatch):
+    """Hosted model names churn. This shipped once pointing at a retired Llama
+    4 Scout id and the only symptom was a 404 that read like a broken URL."""
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.delenv("GROQ_VISION_MODEL", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    models = [p["model"] for p in vision._providers()]
+    assert len(models) >= 2
+    assert len(set(models)) == len(models)
+
+
+def test_groq_is_tried_before_openrouter(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "y")
+    monkeypatch.delenv("GROQ_VISION_MODEL", raising=False)
+    monkeypatch.delenv("OPENROUTER_VISION_MODEL", raising=False)
+    names = [p["name"] for p in vision._providers()]
+    assert names.index("groq") < names.index("openrouter")
+
+
+def test_an_explicit_model_pins_that_provider(monkeypatch):
+    """Lets a known-good id be forced from the dashboard without a redeploy."""
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.setenv("GROQ_VISION_MODEL", "pinned/model")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    models = [p["model"] for p in vision._providers()]
+    assert models == ["pinned/model"]
+
+
+def test_a_provider_with_no_key_contributes_nothing(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    assert all(p["name"] == "groq" for p in vision._providers())
+
+
+def test_failure_names_every_model_it_tried(monkeypatch):
+    """"Model not found" and "provider down" are both a 404 here; only the list
+    of attempts distinguishes them."""
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.delenv("GROQ_VISION_MODEL", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("404 Not Found")
+
+    monkeypatch.setattr(vision.httpx, "post", boom)
+    with pytest.raises(RuntimeError, match="Tried groq:"):
+        vision.read_transactions(b"fake-image-bytes", "image/png")
+
+
+def test_a_later_model_can_rescue_an_earlier_404(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.delenv("GROQ_VISION_MODEL", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    calls = []
+
+    class Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {
+                "content": '{"rows": [{"symbol":"AAPL","shares":1,"price":2,'
+                           '"confidence":"high"}], "warnings": []}'}}]}
+
+    def flaky(url, **kwargs):
+        calls.append(kwargs["json"]["model"])
+        if len(calls) == 1:
+            raise RuntimeError("404 model_not_found")
+        return Resp()
+
+    monkeypatch.setattr(vision.httpx, "post", flaky)
+    out = vision.read_transactions(b"fake", "image/png")
+    assert len(calls) == 2                    # first model 404'd, second worked
+    assert out["rows"][0]["symbol"] == "AAPL"
+    assert out["model"] == calls[1]
