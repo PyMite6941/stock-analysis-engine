@@ -12,11 +12,33 @@ from __future__ import annotations
 
 import math
 
+from . import assets
 from .stats_util import mean, stdev
 
 # A US regular session is 6.5 hours (09:30-16:00 exchange time).
 SESSION_OPEN = "09:30"
 SESSION_CLOSE = "16:00"
+
+
+def continuous_session(candles: dict) -> tuple[dict, str]:
+    """The latest calendar day's bars, for markets that never close.
+
+    Crypto trades 24/7, so "the session" is a UTC day, not 09:30-16:00 in New
+    York. Applying the equity filter to it carved an arbitrary six hours out of
+    a continuous market and then reported pivots, VWAP and an opening range
+    computed from that slice — numbers with no meaning attached.
+    """
+    dates = candles.get("dates") or []
+    if not dates:
+        return candles, "empty"
+
+    day = dates[-1][:10]
+    keep = [i for i, d in enumerate(dates) if d[:10] == day]
+    out = {"dates": [dates[i] for i in keep]}
+    for key in ("open", "high", "low", "close", "volume"):
+        series = candles.get(key) or []
+        out[key] = [series[i] for i in keep if i < len(series)]
+    return out, "live"
 
 
 def regular_hours(candles: dict) -> tuple[dict, str]:
@@ -260,13 +282,34 @@ def intraday_volatility(close: list[float]) -> dict:
 # ---------------------------------------------------------------------------
 # Bundle
 # ---------------------------------------------------------------------------
-def daytrade_levels(symbol: str, intraday: dict, daily: dict) -> dict:
+def daytrade_levels(symbol: str, intraday: dict, daily: dict,
+                    asset_class: str = "equity") -> dict:
     """Everything /api/daytrade returns.
 
     `intraday` is one session of fine-grained bars; `daily` is ~3 months of daily
     bars, used for ATR and for the previous session's pivot inputs.
+
+    `asset_class` decides what "a session" means. For crypto it is a UTC
+    calendar day; for equities it is the regular US trading session. For a
+    mutual fund there is no session at all — it is priced once daily at NAV —
+    and the caller gets an explicit "not applicable" rather than numbers derived
+    from a single bar.
     """
-    session, status = regular_hours(intraday)
+    if not assets.capabilities(asset_class).get("day_tradeable", True):
+        return {
+            "symbol": symbol.upper(),
+            "asset_class": asset_class,
+            "applicable": False,
+            "reason": (f"{assets.capabilities(asset_class)['label']}s are "
+                       f"{assets.capabilities(asset_class)['trades']}, so there "
+                       f"is no intraday session, VWAP or opening range to show."),
+            "session": {}, "pivots": {}, "opening_range": {}, "stops": {},
+        }
+
+    if assets.is_continuous(asset_class):
+        session, status = continuous_session(intraday)
+    else:
+        session, status = regular_hours(intraday)
     i_o = session.get("open", [])
     i_h, i_l = session.get("high", []), session.get("low", [])
     i_c, i_v = session.get("close", []), session.get("volume", [])
@@ -291,6 +334,8 @@ def daytrade_levels(symbol: str, intraday: dict, daily: dict) -> dict:
     elif status == "premarket":
         pivot_idx = day_idx
     else:
+        # Continuous markets have no pre-market, so the day shown is always
+        # today and the pivots always come from the previous UTC day.
         pivot_idx = day_idx - 1 if day_idx >= 1 else None
 
     pivots = (pivot_points(d_h[pivot_idx], d_l[pivot_idx], d_c[pivot_idx])
@@ -306,6 +351,11 @@ def daytrade_levels(symbol: str, intraday: dict, daily: dict) -> dict:
 
     return {
         "symbol": symbol.upper(),
+        "asset_class": asset_class,
+        "applicable": True,
+        # 24/7 markets have no opening bell, so the opening-range and gap
+        # figures below are conventions (UTC midnight), not market events.
+        "continuous": assets.is_continuous(asset_class),
         "as_of": (intraday.get("dates") or [None])[-1],
         "session_date": session_day or None,
         # "live" | "premarket" | "extended" — premarket means the stats below

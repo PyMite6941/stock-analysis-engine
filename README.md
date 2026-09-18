@@ -82,6 +82,40 @@ A ticker that doesn't exist returns **404** with
 `{"error": "symbol_not_found", "detail": "Stock/ETF not found: XYZ..."}` rather
 than a generic failure, so the UI can say so plainly.
 
+## Crypto, ETFs and mutual funds
+
+The app started as a US-equity tool, and several of its assumptions only hold
+there. Each symbol is now classified and the UI adapts, rather than showing
+fields that cannot exist:
+
+| Class | Trades | Notable |
+|---|---|---|
+| Stock | weekdays 09:30-16:00 ET | the original assumptions |
+| ETF | weekdays 09:30-16:00 ET | plus holdings and sector weights |
+| **Mutual fund** | priced once daily at NAV | **no intraday bars at all**, no volume, no bid/ask; has holdings and an expense ratio |
+| **Crypto** | **24/7** | no P/E, no dividends, no earnings; fractional units |
+| Index | weekdays | no volume, not day-tradeable |
+
+Two things this fixes rather than merely adds:
+
+**Crypto had a fake trading session.** The intraday filter kept only
+09:30-16:00 New York, so a market that never closes was sliced to an arbitrary
+six hours — and the pivots, VWAP and opening range were computed from that
+slice. For a continuous market the session is now the UTC calendar day (BTC-USD
+went from 78 bars to a full day), and the panel says plainly that "today" and
+the "opening range" are UTC conventions rather than real market events.
+
+**Mutual funds were offered a day-trading view.** They are priced once a day at
+NAV, so there is no session, no VWAP and no opening range — the panel was
+rendering figures derived from a single daily print. It now explains why the
+view does not apply instead of showing numbers with no referent.
+
+Classification comes from the provider's `quoteType`, falling back to the ticker
+shape (`-USD` suffix, `^` prefix, the five-letter-X mutual-fund convention) and
+returning `unknown` rather than guessing. `GET /api/asset?symbol=` returns the
+class plus capability flags, so a panel asks "does this have intraday data"
+instead of re-deriving it.
+
 ## Install it on your phone
 
 The app is a PWA: **Add to home screen** gives it its own icon, full-screen

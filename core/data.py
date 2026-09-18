@@ -1029,6 +1029,28 @@ def get_holdings(symbol: str) -> dict:
     return get_provider().holdings(symbol)
 
 
+def get_quote_type(symbol: str) -> Optional[str]:
+    """The provider's quoteType (EQUITY / ETF / MUTUALFUND / CRYPTOCURRENCY...).
+
+    Read from the cached .info, so asking for it costs nothing once a symbol has
+    been looked at. Returns None when the provider can't say.
+    """
+    provider = get_provider()
+    info = getattr(provider, "_info", None)
+    if info is None:
+        return None
+    try:
+        return (info(symbol) or {}).get("quoteType")
+    except Exception:  # noqa: BLE001 — classification falls back to the symbol
+        return None
+
+
+def describe_asset(symbol: str) -> dict:
+    """Asset class + capability flags, for callers that need to adapt."""
+    from . import assets
+    return assets.describe(symbol, get_quote_type(symbol))
+
+
 def get_history(symbol: str, period: str = "6mo") -> History:
     # Close-only view, derived from the full candle fetch.
     return get_provider().candles(symbol, period).to_history()

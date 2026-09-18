@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { analyze, quotes, holdings as fetchHoldings } from "../api.js";
+import { analyze, quotes, asset as fetchAsset, holdings as fetchHoldings } from "../api.js";
 import { useRealtime } from "../useRealtime.js";
 import { getMode, isHidden } from "../modes.js";
 import { loadPositions, savePositions } from "../positions.js";
@@ -57,6 +57,7 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
   const [alerts, setAlerts] = useState(loadAlerts);
   const [fired, setFired] = useState(loadFired);
   const [fund, setFund] = useState(null);
+  const [assetInfo, setAssetInfo] = useState(null);
   const dataRef = useRef(data);
   dataRef.current = data;
 
@@ -145,6 +146,18 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
     fetchHoldings(focused)
       .then((d) => { if (!cancelled) setFund(d); })
       .catch(() => { /* non-fatal: the panel just won't render */ });
+    return () => { cancelled = true; };
+  }, [focused]);
+
+  // What kind of instrument is this? Crypto has no P/E, a mutual fund has no
+  // intraday session — panels ask this rather than guessing from the ticker.
+  useEffect(() => {
+    let cancelled = false;
+    setAssetInfo(null);
+    if (!focused) return;
+    fetchAsset(focused)
+      .then((d) => { if (!cancelled) setAssetInfo(d); })
+      .catch(() => { /* fall back to the equity assumptions */ });
     return () => { cancelled = true; };
   }, [focused]);
 
@@ -271,6 +284,20 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
 
               {mode === "daytrader" && focused && (
                 <DayTradePanel symbol={focused} livePrice={livePrices[focused]?.price} />
+              )}
+
+              {assetInfo && assetInfo.asset_class !== "equity" && (
+                <p className="asset-note">
+                  <span className={`asset-badge ${assetInfo.asset_class}`}>
+                    {assetInfo.label}
+                  </span>
+                  <span>
+                    {focused} trades {assetInfo.trades}.
+                    {!assetInfo.pe && " No P/E — it has no earnings."}
+                    {!assetInfo.volume && " No share volume."}
+                    {!assetInfo.intraday && " Priced once a day, so there are no intraday charts."}
+                  </span>
+                </p>
               )}
 
               <PositionsPanel

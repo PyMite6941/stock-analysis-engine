@@ -26,8 +26,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from core import (backtest, compare, correlation, data, daytrade, forecast,
-                  income, indicators, metrics, positions, realized)
+from core import (assets, backtest, compare, correlation, data, daytrade,
+                  forecast, income, indicators, metrics, positions, realized)
 from backend import ai, exports
 from backend.middleware import SecurityAndAuthMiddleware, logger
 
@@ -293,6 +293,18 @@ def candles(symbol: str, period: str = "6mo", interval: str = "1d"):
     return out
 
 
+@app.get("/api/asset")
+def asset_info(symbol: str):
+    """What kind of instrument this is, and what the UI should therefore show.
+
+    Lets panels ask "does this have intraday data / a P/E / volume" instead of
+    each one re-deriving it, and keeps a mutual fund from being offered a
+    day-trading view it cannot support.
+    """
+    data.require_symbol(symbol)
+    return data.describe_asset(symbol)
+
+
 @app.get("/api/holdings")
 def holdings(symbol: str):
     """What an ETF / index fund owns. `is_fund: false` for ordinary stocks."""
@@ -333,11 +345,16 @@ def daytrade_endpoint(symbol: str, interval: str = "5m",
     at `risk_pct` of the account.
     """
     data.require_symbol(symbol)
+    info = data.describe_asset(symbol)
+    if not info["day_tradeable"]:
+        # A mutual fund has no intraday session at all. Say so instead of
+        # computing a VWAP from the single daily NAV print.
+        return daytrade.daytrade_levels(symbol, {}, {}, info["asset_class"])
     # 5 days rather than 1 so that pre-market (and Monday morning) can still fall
     # back to the last completed session instead of a handful of overnight prints.
     intraday = data.get_candles(symbol, "5d", interval).to_dict()
     daily = data.get_candles(symbol, "3mo", "1d").to_dict()
-    out = daytrade.daytrade_levels(symbol, intraday, daily)
+    out = daytrade.daytrade_levels(symbol, intraday, daily, info["asset_class"])
     out["interval"] = interval
     if account_value and entry and stop:
         out["sizing"] = daytrade.position_size(account_value, risk_pct, entry, stop)

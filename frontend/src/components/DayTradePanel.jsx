@@ -55,6 +55,20 @@ export default function DayTradePanel({ symbol, livePrice }) {
     <p className="error-inline">⚠ {error}</p></section>;
   if (!data) return null;
 
+  // A mutual fund is priced once daily at NAV — there is no session, no VWAP
+  // and no opening range. Saying that is more useful than rendering a panel of
+  // dashes, and far more useful than numbers derived from one daily print.
+  if (data.applicable === false) {
+    return (
+      <section className="panel daytrade-panel">
+        <h2>⚡ Intraday — {data.symbol}</h2>
+        <p className="beginner-note" style={{ marginBottom: 0 }}>
+          <strong>Not applicable here.</strong> {data.reason}
+        </p>
+      </section>
+    );
+  }
+
   const s = data.session || {};
   const p = data.pivots || {};
   const or = data.opening_range || {};
@@ -91,6 +105,15 @@ export default function DayTradePanel({ symbol, livePrice }) {
         </span>
       </div>
 
+      {data.continuous && (
+        <p className="beginner-note">
+          <strong>This market never closes.</strong> "Today" means the UTC
+          calendar day, and the opening range is measured from UTC midnight —
+          a convention, not a real opening bell. Pivots come from the previous
+          UTC day.
+        </p>
+      )}
+
       {premarket && (
         <p className="beginner-note">
           <strong>Market closed.</strong> Everything below describes the last
@@ -122,7 +145,10 @@ export default function DayTradePanel({ symbol, livePrice }) {
           </span>
         </div>
         <div className="dt-stat">
-          <span className="k">{premarket ? "Last session range" : "Session range"}</span>
+          <span className="k">
+            {data.continuous ? "Today's range (UTC)"
+              : premarket ? "Last session range" : "Session range"}
+          </span>
           <span className="v">${num(s.low)}–${num(s.high)}</span>
           <span className="sub">{pct(s.range_pct)} wide</span>
         </div>

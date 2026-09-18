@@ -233,3 +233,9 @@ export async function exportEverything({ symbols = [], positions = [], sales = [
   const stamp = new Date().toISOString().slice(0, 10);
   saveBlob(blob, `stock-analysis-${stamp}.xlsx`);
 }
+
+// What kind of instrument this is, so panels can adapt instead of each
+// re-deriving it (crypto has no P/E, a mutual fund has no intraday session).
+export function asset(symbol) {
+  return get(`/api/asset?symbol=${encodeURIComponent(symbol)}`);
+}
