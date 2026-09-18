@@ -215,3 +215,81 @@ def test_a_later_model_can_rescue_an_earlier_404(monkeypatch):
     assert len(calls) == 2                    # first model 404'd, second worked
     assert out["rows"][0]["symbol"] == "AAPL"
     assert out["model"] == calls[1]
+
+
+# --- rate limits are not model failures -----------------------------------
+class _Resp429:
+    status_code = 429
+    headers = {"retry-after": "30"}
+
+
+class _HttpErr(Exception):
+    def __init__(self, response):
+        self.response = response
+        super().__init__("rate limited")
+
+
+def test_a_429_stops_immediately_instead_of_burning_the_other_models(monkeypatch):
+    """Walking the candidate list after a rate limit just spends the remaining
+    budget on requests that will also be refused."""
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.delenv("GROQ_VISION_MODEL", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    calls = []
+
+    def limited(url, **kwargs):
+        calls.append(kwargs["json"]["model"])
+        raise _HttpErr(_Resp429())
+
+    monkeypatch.setattr(vision.httpx, "post", limited)
+    with pytest.raises(vision.RateLimited) as err:
+        vision.read_transactions(b"fake", "image/png")
+    assert len(calls) == 1                       # did not try the second model
+    assert err.value.retry_after == 30.0
+    assert "30s" in str(err.value)
+
+
+def test_rate_limit_message_says_the_rest_still_works(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    class _NoHeader:
+        status_code = 429
+        headers = {}
+
+    monkeypatch.setattr(vision.httpx, "post",
+                        lambda *a, **k: (_ for _ in ()).throw(_HttpErr(_NoHeader())))
+    with pytest.raises(vision.RateLimited, match="CSV import are unaffected"):
+        vision.read_transactions(b"fake", "image/png")
+
+
+def test_a_401_skips_the_whole_provider_not_just_the_model(monkeypatch):
+    """Other models behind the same bad key fail identically."""
+    monkeypatch.setenv("GROQ_API_KEY", "bad")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "good")
+    monkeypatch.delenv("GROQ_VISION_MODEL", raising=False)
+    monkeypatch.delenv("OPENROUTER_VISION_MODEL", raising=False)
+
+    class _Resp401:
+        status_code = 401
+        headers = {}
+
+    calls = []
+
+    class Ok:
+        def raise_for_status(self): pass
+        def json(self):
+            return {"choices": [{"message": {"content": '{"rows": [], "warnings": []}'}}]}
+
+    def by_provider(url, **kwargs):
+        calls.append(url)
+        if "groq" in url:
+            raise _HttpErr(_Resp401())
+        return Ok()
+
+    monkeypatch.setattr(vision.httpx, "post", by_provider)
+    out = vision.read_transactions(b"fake", "image/png")
+    # One groq attempt, then straight to openrouter — not both groq models.
+    assert sum(1 for c in calls if "groq" in c) == 1
+    assert out["provider"] == "openrouter"

@@ -101,6 +101,20 @@ class ImageTooLarge(ValueError):
     pass
 
 
+class RateLimited(RuntimeError):
+    """The provider is throttling us. Distinct from a model or auth problem
+    because the fix is entirely different: wait, rather than change anything."""
+
+    def __init__(self, message: str, retry_after: float | None = None):
+        self.retry_after = retry_after
+        super().__init__(message)
+
+
+def _status_of(exc: Exception) -> int | None:
+    resp = getattr(exc, "response", None)
+    return getattr(resp, "status_code", None)
+
+
 def _providers():
     """One entry per (provider, model) pair worth trying, in priority order.
 
@@ -256,7 +270,10 @@ def read_transactions(image_bytes: bytes, content_type: str,
 
     last_err: Exception | None = None
     tried: list[str] = []
+    skip_provider: str | None = None
     for p in providers:
+        if p["name"] == skip_provider:
+            continue
         tried.append(f"{p['name']}:{p['model']}")
         try:
             r = httpx.post(
@@ -282,7 +299,31 @@ def read_transactions(image_bytes: bytes, content_type: str,
             out["provider"] = p["name"]
             out["model"] = p["model"]
             return out
-        except Exception as e:  # noqa: BLE001 — try the next provider
+        except Exception as e:  # noqa: BLE001
+            status = _status_of(e)
+            # A rate limit is not a model problem. Walking the candidate list
+            # after a 429 just spends the remaining budget on requests that will
+            # also be refused, and turns one throttled call into several.
+            if status == 429:
+                retry_after = None
+                resp = getattr(e, "response", None)
+                try:
+                    retry_after = float(resp.headers.get("retry-after"))
+                except (AttributeError, TypeError, ValueError):
+                    pass
+                raise RateLimited(
+                    "The AI provider is rate-limiting requests right now. "
+                    + (f"Try again in about {int(retry_after)}s."
+                       if retry_after else "Wait a minute and try again.")
+                    + " Your positions and CSV import are unaffected.",
+                    retry_after) from e
+            # 401/403 mean the key is wrong for this provider, so the other
+            # models behind the same key will fail identically — skip to the
+            # next provider instead of retrying them.
+            if status in (401, 403):
+                last_err = e
+                skip_provider = p["name"]
+                continue
             last_err = e
             continue
 

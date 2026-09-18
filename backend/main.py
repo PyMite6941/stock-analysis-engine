@@ -860,6 +860,12 @@ async def import_photo(file: UploadFile = File(...),
             content, file.content_type or "image/png", hint)
     except vision.NoVisionProvider as e:
         raise HTTPException(503, str(e))
+    except vision.RateLimited as e:
+        # 429 rather than 502: nothing is broken, the caller just needs to wait,
+        # and the UI can say so instead of implying the feature is faulty.
+        headers = ({"Retry-After": str(int(e.retry_after))}
+                   if e.retry_after else None)
+        raise HTTPException(429, str(e), headers=headers)
     except vision.ImageTooLarge as e:
         raise HTTPException(413, str(e))
     except ValueError as e:
