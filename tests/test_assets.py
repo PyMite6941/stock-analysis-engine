@@ -161,3 +161,12 @@ def test_equities_are_not_delegated():
     from core.data import FinnhubProvider
     assert assets.classify("AAPL", "EQUITY") not in FinnhubProvider._DELEGATED
     assert assets.classify("SPY", "ETF") not in FinnhubProvider._DELEGATED
+
+
+# --- symbol search ---------------------------------------------------------
+def test_futures_are_dropped_from_search_results():
+    """Searching "nvidia" returns SNVDA=F and XNVDA=F, which this app cannot
+    model and which crowd out the answer the user wanted."""
+    from core import data
+    assert "FUTURE" in data._SEARCH_SKIP_TYPES
+    assert "OPTION" in data._SEARCH_SKIP_TYPES

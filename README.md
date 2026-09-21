@@ -82,6 +82,23 @@ A ticker that doesn't exist returns **404** with
 `{"error": "symbol_not_found", "detail": "Stock/ETF not found: XYZ..."}` rather
 than a generic failure, so the UI can say so plainly.
 
+## Search by company name
+
+Type `nvidia` and get NVDA. The search box suggests matching symbols as you
+type — with the asset class, so an ETF tracking a company is distinguishable
+from the company — and an exact ticker always wins over a name match, so `KO`
+gives Coca-Cola rather than something whose name happens to contain "ko".
+
+Not knowing the ticker was a dead end: the ticker is exactly what a beginner is
+trying to find out, so "Stock/ETF not found: NVIDIA" told them nothing they
+could act on. The same resolution runs on submit in both the home page and the
+analysis page, so a name typed straight into either box works even without
+touching the dropdown.
+
+`GET /api/search?q=` is keyless — the same Yahoo endpoint family as the chart
+fallback. Futures are filtered out, since searching a company name returns
+several of them and this app cannot model any.
+
 ## Guided tour
 
 A `?` button top-right starts a spotlight walkthrough: the page dims, the panel

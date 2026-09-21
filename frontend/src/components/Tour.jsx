@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { markTourSeen, targetElement, visibleSteps } from "../tour.js";
+import { markTourSeen, stepsForMode, targetElement, waitForTarget } from "../tour.js";
 
 const PAD = 8;            // breathing room around the spotlight
-const SCROLL_SETTLE_MS = 420;
 
 // Guided tour with a spotlight: the page dims, the panel being described stays
 // lit, and the view scrolls to it. Describing a panel in prose is far weaker
@@ -16,14 +15,17 @@ export default function Tour({ open, onClose, mode }) {
   const [index, setIndex] = useState(0);
   const [rect, setRect] = useState(null);
   const [steps, setSteps] = useState([]);
+  const [resolving, setResolving] = useState(false);
   const cardRef = useRef(null);
+  // Which way the user is moving, so a step with no target on this page is
+  // skipped in that direction rather than bouncing them back.
+  const dirRef = useRef(1);
 
-  // Recompute which steps apply each time the tour opens: panels come and go
-  // with the mode and with whether you have positions yet.
   useEffect(() => {
     if (!open) return;
-    setSteps(visibleSteps(mode));
+    setSteps(stepsForMode(mode));
     setIndex(0);
+    dirRef.current = 1;
   }, [open, mode]);
 
   const step = steps[index] || null;
@@ -39,18 +41,39 @@ export default function Tour({ open, onClose, mode }) {
     });
   }, [step]);
 
-  // Scroll the target into view, then measure once it has settled. Measuring
-  // before the smooth scroll finishes puts the spotlight where the element used
-  // to be.
+  // Find the target (waiting briefly for panels that load after the page),
+  // JUMP to it, then measure. An instant jump rather than a smooth scroll: on a
+  // phone the lower panels are several screens down, and a smooth scroll was
+  // still travelling when the spotlight measured, leaving the ring drawn around
+  // empty space. The spotlight itself still animates, so it doesn't feel abrupt.
   useLayoutEffect(() => {
     if (!open || !step) return undefined;
-    const el = targetElement(step);
-    if (!el) { setRect(null); return undefined; }
+    let cancelled = false;
 
-    el.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
-    const t = setTimeout(measure, SCROLL_SETTLE_MS);
-    return () => clearTimeout(t);
-  }, [open, step, measure]);
+    if (!step.target) { setRect(null); return undefined; }
+
+    setResolving(true);
+    waitForTarget(step).then((el) => {
+      if (cancelled) return;
+      setResolving(false);
+      if (!el) {
+        // Genuinely not on this page (e.g. no positions yet): move on in the
+        // direction of travel instead of showing a card that points at nothing.
+        setIndex((i) => {
+          const nextI = i + dirRef.current;
+          if (nextI < 0 || nextI >= steps.length) return i;
+          return nextI;
+        });
+        return;
+      }
+      el.scrollIntoView({ behavior: "auto", block: "center", inline: "nearest" });
+      // Two frames: one for the scroll to apply, one for layout to settle.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!cancelled) measure();
+      }));
+    });
+    return () => { cancelled = true; };
+  }, [open, step, measure, steps.length]);
 
   // Keep the hole aligned if the page moves underneath us.
   useEffect(() => {
@@ -69,10 +92,14 @@ export default function Tour({ open, onClose, mode }) {
   }, [onClose]);
 
   const next = useCallback(() => {
+    dirRef.current = 1;
     setIndex((i) => (i >= steps.length - 1 ? (finish(), i) : i + 1));
   }, [steps.length, finish]);
 
-  const back = useCallback(() => setIndex((i) => Math.max(0, i - 1)), []);
+  const back = useCallback(() => {
+    dirRef.current = -1;
+    setIndex((i) => Math.max(0, i - 1));
+  }, []);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -94,6 +121,9 @@ export default function Tour({ open, onClose, mode }) {
   useEffect(() => { cardRef.current?.focus(); }, [index, open]);
 
   if (!open || !step) return null;
+  if (resolving && step.target && !rect) {
+    return <div className="tour-root"><div className="tour-overlay no-hole" /></div>;
+  }
 
   const last = index === steps.length - 1;
   // Put the card opposite the highlight so it never covers what it describes.

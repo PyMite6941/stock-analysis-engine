@@ -266,6 +266,75 @@ def _resample_3h(c: Candles) -> Candles:
     return Candles(c.symbol, dates, o, h, l, cl, v)
 
 
+_YAHOO_SEARCH = "https://query1.finance.yahoo.com/v1/finance/search"
+
+# Futures clutter every result ("SNVDA=F" for "nvidia") and are not tradeable
+# through anything this app models, so they are dropped rather than ranked down.
+_SEARCH_SKIP_TYPES = {"FUTURE", "OPTION", "ECNQUOTE"}
+
+
+def search_symbols(query: str, limit: int = 8) -> list[dict]:
+    """Look up a ticker by company name. Keyless, same endpoint family as the
+    chart fallback.
+
+    Typing "nvidia" and getting nothing is a dead end a beginner cannot escape:
+    they do not know the ticker, which is the whole reason they typed the name.
+    """
+    import requests
+
+    q = (query or "").strip()
+    if len(q) < 2:
+        return []
+    try:
+        r = requests.get(
+            _YAHOO_SEARCH,
+            params={"q": q, "quotesCount": max(limit * 3, 12), "newsCount": 0,
+                    "listsCount": 0},
+            headers=_YAHOO_HEADERS, timeout=12)
+        r.raise_for_status()
+        quotes = r.json().get("quotes") or []
+    except Exception as e:  # noqa: BLE001 — search is a convenience, never fatal
+        logger.warning("Symbol search failed for %r: %s", q, e)
+        return []
+
+    from . import assets
+    out = []
+    for item in quotes:
+        symbol = (item.get("symbol") or "").strip()
+        qtype = (item.get("quoteType") or "").upper()
+        if not symbol or qtype in _SEARCH_SKIP_TYPES:
+            continue
+        name = (item.get("longname") or item.get("shortname")
+                or item.get("name") or symbol)
+        out.append({
+            "symbol": symbol.upper(),
+            "name": name,
+            "exchange": item.get("exchDisp") or item.get("exchange"),
+            "quote_type": qtype or None,
+            "asset_class": assets.classify(symbol, qtype),
+            "label": assets.capabilities(assets.classify(symbol, qtype))["label"],
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def resolve_symbol(query: str) -> Optional[dict]:
+    """Best single match for a name or ticker, or None.
+
+    An exact ticker match always wins over a name match — typing "KO" must give
+    Coca-Cola, not a company whose NAME happens to contain "ko".
+    """
+    q = (query or "").strip().upper()
+    if not q:
+        return None
+    results = search_symbols(q, limit=8)
+    for r in results:
+        if r["symbol"] == q:
+            return r
+    return results[0] if results else None
+
+
 def yahoo_quote(symbol: str) -> Optional[Quote]:
     """Best-effort quote from the same keyless endpoint.
 

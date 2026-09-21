@@ -252,3 +252,11 @@ export async function importPhoto(file, hint) {
   });
   return (await handle(r)).json();
 }
+
+// Find a ticker from a company name — "nvidia" -> NVDA. Takes an AbortSignal
+// because this fires while the user types and stale replies must not land.
+export async function searchSymbols(q, limit = 8, signal) {
+  const params = new URLSearchParams({ q, limit });
+  const r = await fetch(`/api/search?${params}`, { headers: headers(), signal });
+  return (await handle(r)).json();
+}

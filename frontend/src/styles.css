@@ -1293,3 +1293,42 @@ button.icon.sell:hover { background: var(--accent); color: #0d1117; }
   background: var(--pos); color: #0d1117; font-weight: 700; cursor: pointer;
   font-family: inherit; font-size: 0.88rem; }
 .photo-save:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* The mobile 44px min-height stretched the ? into an oval; keep it round. */
+@media (max-width: 768px) {
+  .help-btn { width: 44px; height: 44px; min-width: 44px; border-radius: 50%; }
+}
+
+/* --- symbol search with name suggestions -------------------------------- */
+.symbol-search { position: relative; flex: 1; min-width: 0; }
+.symbol-search input { width: 100%; }
+.search-spinner { position: absolute; right: 12px; top: 50%;
+  transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+
+.symbol-results {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 70;
+  margin: 0; padding: 4px; list-style: none; text-align: left;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 14px 40px rgba(0,0,0,0.5);
+  max-height: 320px; overflow-y: auto;
+}
+.symbol-results li {
+  display: grid; grid-template-columns: 84px minmax(0,1fr) auto;
+  gap: 10px; align-items: center; padding: 9px 10px;
+  border-radius: 7px; cursor: pointer; font-size: 0.86rem;
+}
+.symbol-results li.active { background: rgba(88,166,255,0.14); }
+.sr-symbol { font-weight: 800; color: var(--accent); }
+.sr-name { color: var(--text); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.sr-class { font-size: 0.66rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.03em; padding: 2px 7px; border-radius: 999px;
+  background: var(--border); color: var(--muted); white-space: nowrap; }
+.sr-class.crypto { background: rgba(247,147,26,0.2); color: #f7931a; }
+.sr-class.etf { background: rgba(63,185,80,0.18); color: var(--pos); }
+.sr-class.mutual_fund { background: rgba(88,166,255,0.2); color: var(--accent); }
+
+@media (max-width: 768px) {
+  .symbol-results li { grid-template-columns: 72px minmax(0,1fr); }
+  .sr-class { display: none; }
+}

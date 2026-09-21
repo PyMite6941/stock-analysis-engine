@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { analyze, quotes, asset as fetchAsset, holdings as fetchHoldings } from "../api.js";
+import { analyze, quotes, asset as fetchAsset, holdings as fetchHoldings,
+         searchSymbols } from "../api.js";
 import { useRealtime } from "../useRealtime.js";
 import { getMode, isHidden } from "../modes.js";
 import { loadPositions, savePositions } from "../positions.js";
@@ -108,7 +109,23 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
     setError(null);
     setNotFound(null);
     try {
-      const result = await analyze(symbols, period);
+      // Company names work here too, not just on the home page: someone who
+      // edits this box to "tesla" should get TSLA rather than a 404.
+      let wanted = symbols;
+      const looksLikeName = (s) => /[a-z]/i.test(s) && (s.includes(" ") || s.length > 5);
+      if (symbols.some(looksLikeName)) {
+        wanted = await Promise.all(symbols.map(async (s) => {
+          if (!looksLikeName(s)) return s;
+          try {
+            const hit = (await searchSymbols(s, 1)).results?.[0];
+            return hit ? hit.symbol : s;
+          } catch { return s; }
+        }));
+        if (wanted.join(",") !== symbols.join(",")) {
+          setSymbolsInput(wanted.join(", "));
+        }
+      }
+      const result = await analyze(wanted, period);
       setData(result);
       // Some symbols resolved, some didn't — show the good ones and name the bad.
       setNotFound(result.not_found?.length ? result.not_found : null);

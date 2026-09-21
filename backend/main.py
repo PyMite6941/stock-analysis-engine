@@ -293,6 +293,16 @@ def candles(symbol: str, period: str = "6mo", interval: str = "1d"):
     return out
 
 
+@app.get("/api/search")
+def search(q: str, limit: int = 8):
+    """Find a ticker from a company name — "nvidia" -> NVDA.
+
+    Not knowing the ticker is a dead end for a beginner, since the ticker is
+    exactly what they were trying to find out.
+    """
+    return {"query": q, "results": data.search_symbols(q, limit=limit)}
+
+
 @app.get("/api/asset")
 def asset_info(symbol: str):
     """What kind of instrument this is, and what the UI should therefore show.

@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { quotes as fetchQuotes } from "../api.js";
+import { quotes as fetchQuotes, searchSymbols } from "../api.js";
 import { loadPositions } from "../positions.js";
 import { ago, clearRecents, loadRecents, recordSearch, removeRecent } from "../recents.js";
 import ModeSwitch from "./ModeSwitch.jsx";
+import SymbolSearch from "./SymbolSearch.jsx";
 
 // Major indices shown under "Markets".
 const INDICES = [
@@ -93,15 +94,34 @@ export default function HomePage({ onSearch, theme, toggleTheme, mode, setMode,
 
   // Resolve the ticker BEFORE navigating, so a typo says "not found" here
   // instead of opening an analysis page that can't load anything.
-  async function submit() {
-    const raw = query.trim().toUpperCase();
+  async function submit(typed) {
+    const raw = String(typed ?? query).trim().toUpperCase();
     if (!raw) return;
     const syms = raw.split(",").map((s) => s.trim()).filter(Boolean);
     setNotFound(null);
     setChecking(true);
     try {
       const res = await fetchQuotes(syms);
-      const bad = (res.quotes || []).filter((q) => q.not_found).map((q) => q.symbol);
+      let bad = (res.quotes || []).filter((q) => q.not_found).map((q) => q.symbol);
+
+      // Not a ticker? It may well be a company name. Resolve it rather than
+      // telling someone who typed "nvidia" that nvidia does not exist.
+      if (bad.length) {
+        const resolved = await Promise.all(bad.map(async (b) => {
+          try {
+            const hit = (await searchSymbols(b, 1)).results?.[0];
+            return hit ? [b, hit.symbol] : null;
+          } catch { return null; }
+        }));
+        const map = Object.fromEntries(resolved.filter(Boolean));
+        if (Object.keys(map).length) {
+          const fixed = syms.map((s) => map[s] || s);
+          setRecents(recordSearch(fixed));
+          onSearch(fixed.join(", "));
+          return;
+        }
+      }
+
       if (bad.length === syms.length) { setNotFound(bad); return; }
       if (bad.length) setNotFound(bad);
       const good = syms.filter((s) => !bad.includes(s));
@@ -180,21 +200,21 @@ export default function HomePage({ onSearch, theme, toggleTheme, mode, setMode,
         </p>
 
         <div className="search">
-          <input
+          <SymbolSearch
             autoFocus
             value={query}
-            onChange={(e) => { setQuery(e.target.value); setNotFound(null); }}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder="Search a ticker (e.g. AAPL or SPY) or filter below…"
+            onChange={(v) => { setQuery(v); setNotFound(null); }}
+            onSubmit={submit}
+            placeholder="Ticker or company name — AAPL, nvidia, bitcoin…"
           />
-          <button onClick={submit} disabled={checking}>
+          <button onClick={() => submit()} disabled={checking}>
             {checking ? "Checking…" : "Analyze →"}
           </button>
         </div>
         {notFound ? (
           <p className="not-found-inline">
             🔎 <strong>Stock/ETF not found:</strong> <code>{notFound.join(", ")}</code>
-            {" "}— check the spelling. Use the exchange ticker (AAPL, not Apple).
+            {" "}— nothing matched that as a ticker or a company name.
           </p>
         ) : (
           <p className="search-hint">

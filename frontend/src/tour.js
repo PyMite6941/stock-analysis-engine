@@ -165,6 +165,35 @@ export function visibleSteps(mode) {
   return STEPS.filter((s) => stepVisible(s, mode));
 }
 
+/**
+ * Steps for this mode, WITHOUT checking whether their target is on the page.
+ *
+ * Filtering on DOM presence when the tour opens dropped every panel that loads
+ * asynchronously — forecast, backtest, diversification all fetch after the page
+ * renders, so they were absent at that instant and silently skipped. Presence
+ * is now checked per step, when that step is reached, with a short wait.
+ */
+export function stepsForMode(mode) {
+  return STEPS.filter((s) => !s.mode || s.mode === mode);
+}
+
+/** Resolve once `step`'s target exists, or null after `timeoutMs`. */
+export function waitForTarget(step, timeoutMs = 1500) {
+  if (!step?.target) return Promise.resolve(null);
+  const found = targetElement(step);
+  if (found) return Promise.resolve(found);
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const tick = () => {
+      const el = targetElement(step);
+      if (el) return resolve(el);
+      if (Date.now() - start >= timeoutMs) return resolve(null);
+      setTimeout(tick, 100);
+    };
+    tick();
+  });
+}
+
 /** First element matching a step's (possibly comma-separated) target. */
 export function targetElement(step) {
   if (!step?.target) return null;
