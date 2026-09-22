@@ -36,7 +36,7 @@ The service worker is deliberately **not** registered in a packaged build — th
 shell already ships the assets, so a worker would only add a staler second copy,
 and it cannot register on `file://` anyway.
 
-## Desktop (Electron) — verified working
+## Desktop (Electron) — built and verified
 
 ```bash
 cd apps/desktop
@@ -45,12 +45,42 @@ npm start          # builds the web app, then opens the window
 npm run dist:win   # or dist:mac / dist:linux -> apps/desktop/release/
 ```
 
-Verified: the window opens, the app mounts, and a `file://` page fetches live
-quotes from the deployed API (`AAPL 338.98`). The window remembers its size and
-position, and external links open in your real browser rather than stranding you
-in a chrome-less window with no back button.
+Built here: `Stock Analysis Setup 0.1.0.exe` (80 MB installer) plus
+`release/win-unpacked/Stock Analysis.exe`, copied to `dist/` at the repo root.
+Verified: the window opens, the app mounts, the bundled `index.html` references
+its assets relatively (`./assets/...`, the blank-window trap above), and a
+`file://` page fetches live quotes from the deployed API (`AAPL 338.98`). The
+window remembers its size and position, and external links open in your real
+browser rather than stranding you in a chrome-less window with no back button.
 
-## Android
+### If `dist:win` fails on symlinks
+
+```
+Cannot create symbolic link : A required privilege is not held by the client
+```
+
+electron-builder unpacks a code-signing toolchain that contains macOS symlinks,
+and Windows refuses to create them without elevation. Turn on **Developer Mode**
+(Settings > System > For developers) and rebuild. Failing that, extract the
+archive by hand, excluding the `darwin` directory, into
+`%LOCALAPPDATA%\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0` — the
+builder finds the cache already populated and skips the step. Nothing is being
+signed either way; the toolchain is downloaded unconditionally.
+
+## Android — one command, not yet built
+
+```powershell
+cd apps/mobile
+powershell -ExecutionPolicy Bypass -File build-apk.ps1
+```
+
+That script does the whole thing: builds the web app with `--mode app`, runs
+`cap sync android`, copies the project to an ASCII path (see below), runs
+`gradlew assembleDebug`, and drops the APK in `apps/mobile/dist/`. Install it
+with `adb install -r apps/mobile/dist/app-debug.apk`, or copy the file to the
+phone and open it.
+
+To drive it from Android Studio instead:
 
 ```bash
 cd apps/mobile
@@ -59,10 +89,20 @@ npx cap sync android      # copies the latest web build into the project
 npm run open:android      # opens Android Studio
 ```
 
-Then Run ▶, or `./gradlew assembleDebug` for an APK at
-`android/app/build/outputs/apk/debug/`.
+**No APK has been produced yet.** This sandbox blocks `dl.google.com`, which is
+the only source for the Android Gradle Plugin, so the build stops at dependency
+resolution:
 
-### ⚠ Build from a path with no non-ASCII characters
+```
+Could not resolve com.android.tools.build:gradle:8.2.1
+```
+
+`github.com` and `repo1.maven.org` both answer from here, so it is that one host
+specifically. On a normal connection it is a one-off download. Everything before
+that step — web build, sync, the ASCII copy, the wrapper starting Gradle — runs
+clean, so treat only the compile itself as unproven.
+
+### Why the script copies the project first
 
 **This repo lives under `OneDrive\ドキュメント`, and Gradle cannot build from
 there.** The JVM mangles the path and the wrapper fails before compiling:
@@ -71,21 +111,11 @@ there.** The JVM mangles the path and the wrapper fails before compiling:
 Error: Could not find or load main class org.gradle.wrapper.GradleWrapperMain
 ```
 
-It is the same defect that breaks JavaFX in this workspace. Copy the project
-somewhere ASCII-only to build:
-
-```powershell
-robocopy "$HOME\OneDrive\ドキュメント\portfolio\stock-analysis-engine\apps\mobile" `
-         "$env:TEMP\sae-build\mobile" /E
-cd "$env:TEMP\sae-build\mobile\android"
-.\gradlew.bat assembleDebug
-```
-
-Confirmed: from an ASCII path the wrapper runs and Gradle starts the build. It
-was **not** run to completion here — this sandbox blocks `dl.google.com`, so the
-Android Gradle Plugin could not download (`Connection reset`). On a normal
-connection that step is a one-off download. **Nobody has produced an APK yet**,
-so treat the first build as unproven.
+It is the same defect that breaks JavaFX in this workspace, and the usual
+escape hatch does not apply: PowerShell resolves an 8.3 short path straight back
+to the long one. So the script robocopies to `%TEMP%\sae-android-build` and
+builds there. If you move this repo somewhere ASCII-only, the copy becomes
+harmless overhead rather than a requirement.
 
 ## iOS
 

@@ -8,7 +8,12 @@ buildscript {
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.2.1'
-        classpath 'com.google.gms:google-services:4.4.0'
+        // google-services removed: this app has no Firebase and no
+        // google-services.json, so the plugin below never applies — but the
+        // classpath was still resolved on every build, adding a download that
+        // can only fail for anyone without access to Google's Maven.
+        // Re-add it alongside google-services.json if push notifications are
+        // ever added.
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files

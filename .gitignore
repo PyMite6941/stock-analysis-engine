@@ -25,3 +25,9 @@ apps/mobile/android/app/src/main/assets/public/
 apps/mobile/android/app/src/main/assets/capacitor.config.json
 apps/mobile/ios/App/App/public/
 apps/mobile/ios/App/Pods/
+
+# Build outputs collected for download. The README explaining how to rebuild
+# them is tracked; the multi-hundred-megabyte binaries beside it are not.
+/dist/*
+!/dist/README.md
+/apps/mobile/dist/

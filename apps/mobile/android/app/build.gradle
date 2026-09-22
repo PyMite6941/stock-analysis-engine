@@ -46,7 +46,8 @@ apply from: 'capacitor.build.gradle'
 
 try {
     def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
+    if (servicesJSON.exists() && servicesJSON.text) {
+        // Needs the classpath in the root build.gradle, removed above.
         apply plugin: 'com.google.gms.google-services'
     }
 } catch(Exception e) {
