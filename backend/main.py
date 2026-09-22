@@ -33,12 +33,32 @@ from backend.middleware import SecurityAndAuthMiddleware, logger
 
 app = FastAPI(title="Stock Analysis Engine", version="0.1.0")
 
-# Dev CORS: Vite dev server runs on 5173. Tighten for production.
+# CORS. On the web the app is same-origin and none of this applies; it exists
+# for the dev server and for the packaged apps, which are genuinely
+# cross-origin:
+#
+#   capacitor://localhost   iOS shell
+#   http://localhost        Android shell (and its dev server)
+#   file://                 Electron, which sends Origin: null
+#
+# Auth travels in a header rather than a cookie, so credentials are not allowed
+# and these origins cannot be used to ride on someone's session.
+_APP_ORIGINS = [
+    "http://localhost:5173", "http://127.0.0.1:5173",   # vite dev
+    "http://localhost:4173", "http://127.0.0.1:4173",   # vite preview
+    "capacitor://localhost", "ionic://localhost",        # iOS shell
+    "http://localhost",                                  # Android shell
+    "null",                                              # Electron file://
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_APP_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    # The stale-data banner reads these, and a cross-origin response hides
+    # every header unless it is explicitly exposed.
+    expose_headers=["x-sae-offline", "x-sae-cached-at", "Content-Disposition"],
 )
 app.add_middleware(SecurityAndAuthMiddleware)
 

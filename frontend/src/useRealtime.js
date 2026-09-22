@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
+import { apiUrl } from "./runtime.js";
 
 // Cache the token lookup so every hook instance shares one fetch.
 let _tokenPromise;
 function getToken() {
   if (!_tokenPromise) {
-    _tokenPromise = fetch("/api/realtime-token")
+    _tokenPromise = fetch(apiUrl("/api/realtime-token"))
       .then((r) => r.json())
       .then((d) => d.token || null)
       .catch(() => null);

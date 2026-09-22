@@ -1,6 +1,7 @@
 // Thin client for the FastAPI backend. All calls go through Vite's /api proxy.
 
 import { clearStale, markStale } from "./pwa.js";
+import { apiUrl } from "./runtime.js";
 import { cachedQuotes, rememberQuotes } from "./quoteCache.js";
 
 const AUTH_KEY = "sae:api_key";
@@ -46,7 +47,7 @@ async function handle(r) {
 }
 
 async function post(path, body) {
-  const r = await fetch(path, {
+  const r = await fetch(apiUrl(path), {
     method: "POST",
     headers: headers({ "Content-Type": "application/json" }),
     body: JSON.stringify(body),
@@ -55,13 +56,13 @@ async function post(path, body) {
 }
 
 async function get(path) {
-  const r = await fetch(path, { headers: headers() });
+  const r = await fetch(apiUrl(path), { headers: headers() });
   return (await handle(r)).json();
 }
 
 // POST that returns a file rather than JSON.
 async function postBlob(path, body) {
-  const r = await fetch(path, {
+  const r = await fetch(apiUrl(path), {
     method: "POST",
     headers: headers({ "Content-Type": "application/json" }),
     body: JSON.stringify(body),
@@ -157,7 +158,7 @@ export async function exportPositions(positions, format = "csv") {
 export async function importPositions(file) {
   const form = new FormData();
   form.append("file", file);
-  const r = await fetch("/api/portfolio/import", {
+  const r = await fetch(apiUrl("/api/portfolio/import"), {
     method: "POST", headers: headers(), body: form,
   });
   return (await handle(r)).json();
@@ -175,8 +176,12 @@ export function saveBlob(blob, filename) {
 }
 
 function withKey(url) {
+  // These become <a href> targets rather than fetches, so they need the same
+  // absolute base when packaged — a relative href inside a file:// bundle
+  // points at the bundle.
+  const full = apiUrl(url);
   const key = sessionStorage.getItem(AUTH_KEY);
-  return key ? `${url}&api_key=${key}` : url;
+  return key ? `${full}&api_key=${key}` : full;
 }
 
 export function downloadCsvUrl(symbols, period = "6mo") {
@@ -247,7 +252,7 @@ export async function importPhoto(file, hint) {
   const form = new FormData();
   form.append("file", file);
   if (hint) form.append("hint", hint);
-  const r = await fetch("/api/import/photo", {
+  const r = await fetch(apiUrl("/api/import/photo"), {
     method: "POST", headers: headers(), body: form,
   });
   return (await handle(r)).json();
@@ -257,6 +262,6 @@ export async function importPhoto(file, hint) {
 // because this fires while the user types and stale replies must not land.
 export async function searchSymbols(q, limit = 8, signal) {
   const params = new URLSearchParams({ q, limit });
-  const r = await fetch(`/api/search?${params}`, { headers: headers(), signal });
+  const r = await fetch(apiUrl(`/api/search?${params}`), { headers: headers(), signal });
   return (await handle(r)).json();
 }

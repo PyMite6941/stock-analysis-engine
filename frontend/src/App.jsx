@@ -6,6 +6,7 @@ import InstallBar from "./components/InstallBar.jsx";
 import Tour from "./components/Tour.jsx";
 import { hasSeenTour } from "./tour.js";
 import { loadMode, saveMode } from "./modes.js";
+import { apiUrl } from "./runtime.js";
 
 const AUTH_KEY = "sae:api_key";
 
@@ -28,7 +29,7 @@ export default function App() {
     async function check() {
       try {
         const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
-        const r = await fetch("/api/health", { headers });
+        const r = await fetch(apiUrl("/api/health"), { headers });
         if (r.status === 401) {
           sessionStorage.removeItem(AUTH_KEY);
           setApiKey(null);

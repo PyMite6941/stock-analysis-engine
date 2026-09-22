@@ -367,3 +367,71 @@ describe("live stream symbol mapping (crypto)", () => {
     expect(preferTick({ source: "COINBASE" }, { source: "COINBASE" })).toBe(true);
   });
 });
+
+describe("runtime: where the API lives", () => {
+  const realWindow = globalThis.window;
+
+  afterEach(() => { globalThis.window = realWindow; });
+
+  async function runtimeWith(win) {
+    globalThis.window = win;
+    // Fresh import per case: the module reads the environment at call time,
+    // but platform detection is cheap and this keeps cases independent.
+    const mod = await import("../runtime.js?t=" + Math.random());
+    return mod;
+  }
+
+  it("uses relative paths on the web, keeping calls same-origin", async () => {
+    const r = await runtimeWith({ location: { protocol: "https:", hostname: "x.com" } });
+    expect(r.platform()).toBe("web");
+    expect(r.isPackaged()).toBe(false);
+    expect(r.apiUrl("/api/health")).toBe("/api/health");
+  });
+
+  it("detects the Capacitor shells", async () => {
+    for (const p of ["ios", "android"]) {
+      const r = await runtimeWith({
+        Capacitor: { getPlatform: () => p },
+        location: { protocol: "https:", hostname: "localhost" },
+      });
+      expect(r.platform()).toBe(p);
+      expect(r.isPackaged()).toBe(true);
+    }
+  });
+
+  it("detects the Electron shell via the preload flag", async () => {
+    const r = await runtimeWith({
+      __SAE_DESKTOP__: true, location: { protocol: "file:", hostname: "" },
+    });
+    expect(r.platform()).toBe("desktop");
+    expect(r.platformLabel()).toBe("Desktop app");
+  });
+
+  it("gives packaged builds an ABSOLUTE api url", async () => {
+    // A relative path inside a file:// bundle resolves to the bundle itself and
+    // fetches nothing — this is the whole reason the module exists.
+    const r = await runtimeWith({
+      __SAE_DESKTOP__: true, location: { protocol: "file:", hostname: "" },
+    });
+    const url = r.apiUrl("/api/health");
+    expect(url.startsWith("http")).toBe(true);
+    expect(url.endsWith("/api/health")).toBe(true);
+  });
+
+  it("never registers a service worker in a packaged shell", async () => {
+    // The native shell already bundles the assets; a worker would only add a
+    // staler second copy, and cannot register on file:// at all.
+    const desktop = await runtimeWith({
+      __SAE_DESKTOP__: true, location: { protocol: "file:", hostname: "" },
+    });
+    expect(desktop.serviceWorkerUseful()).toBe(false);
+
+    const web = await runtimeWith({ location: { protocol: "https:", hostname: "x.com" } });
+    expect(web.serviceWorkerUseful()).toBe(true);
+  });
+
+  it("does not register a worker over plain http on a remote host", async () => {
+    const r = await runtimeWith({ location: { protocol: "http:", hostname: "example.com" } });
+    expect(r.serviceWorkerUseful()).toBe(false);
+  });
+});

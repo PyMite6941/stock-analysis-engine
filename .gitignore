@@ -13,3 +13,15 @@ frontend/dist/
 .DS_Store
 
 .vercel
+
+# app shells
+apps/*/node_modules/
+apps/desktop/release/
+apps/mobile/android/app/build/
+apps/mobile/android/build/
+apps/mobile/android/.gradle/
+apps/mobile/android/local.properties
+apps/mobile/android/app/src/main/assets/public/
+apps/mobile/android/app/src/main/assets/capacitor.config.json
+apps/mobile/ios/App/App/public/
+apps/mobile/ios/App/Pods/

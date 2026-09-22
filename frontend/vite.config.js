@@ -2,7 +2,16 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 // Proxy /api to the FastAPI backend so the browser talks to one origin in dev.
-export default defineConfig({
+// `--mode app` builds for the packaged shells (Capacitor / Electron).
+//
+// The only thing that has to change is `base`. On the web the app is served
+// from the domain root, so absolute "/assets/..." is correct and must stay:
+// a relative base there breaks deep links and the prerendered routes. Inside a
+// packaged shell the page is loaded from file:// (Electron) or a bundle root
+// (Capacitor), where "/assets/..." resolves to the filesystem root and nothing
+// loads at all — a blank window with no error.
+export default defineConfig(({ mode }) => ({
+  base: mode === "app" ? "./" : "/",
   plugins: [react()],
   server: {
     port: 5173,
@@ -25,4 +34,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

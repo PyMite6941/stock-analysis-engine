@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiUrl } from "../runtime.js";
 
 export default function LoginPage({ onAuthenticated }) {
   const [key, setKey] = useState("");
@@ -10,7 +11,7 @@ export default function LoginPage({ onAuthenticated }) {
     setBusy(true);
     setError(null);
     try {
-      const r = await fetch("/api/health", {
+      const r = await fetch(apiUrl("/api/health"), {
         headers: { Authorization: `Bearer ${key.trim()}` },
       });
       if (r.ok) {

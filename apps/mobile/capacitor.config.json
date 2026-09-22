@@ -1,0 +1,22 @@
+{
+  "appId": "studio.tin.stockanalysis",
+  "appName": "Stock Analysis",
+  "webDir": "../../frontend/dist",
+  "android": {
+    "allowMixedContent": false
+  },
+  "ios": {
+    "contentInset": "always"
+  },
+  "server": {
+    "androidScheme": "http",
+    "iosScheme": "capacitor"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "backgroundColor": "#0d1117",
+      "showSpinner": false
+    }
+  }
+}

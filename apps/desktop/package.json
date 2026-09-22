@@ -1,0 +1,58 @@
+{
+  "name": "stock-analysis-engine-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop shell around the web build (Electron).",
+  "main": "main.js",
+  "scripts": {
+    "build:web": "cd ../../frontend && npm install && npm run build -- --mode app",
+    "start": "npm run build:web && electron .",
+    "dev": "electron .",
+    "dist": "npm run build:web && electron-builder",
+    "dist:win": "npm run build:web && electron-builder --win",
+    "dist:mac": "npm run build:web && electron-builder --mac",
+    "dist:linux": "npm run build:web && electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "studio.tin.stockanalysis",
+    "productName": "Stock Analysis",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "../../frontend/dist",
+        "to": "app"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "icon.png"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "icon.png",
+      "category": "public.app-category.finance"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "icon.png",
+      "category": "Office"
+    }
+  }
+}

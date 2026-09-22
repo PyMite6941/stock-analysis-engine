@@ -172,6 +172,26 @@ returning `unknown` rather than guessing. `GET /api/asset?symbol=` returns the
 class plus capability flags, so a panel asks "does this have intraday data"
 instead of re-deriving it.
 
+## Native apps (iOS, Android, desktop)
+
+The same build also ships as real apps — see [APPS.md](APPS.md).
+
+```
+frontend/dist ──┬─► apps/mobile  (Capacitor) ─┬─► ios/      Xcode
+                │                             └─► android/  Gradle
+                └─► apps/desktop (Electron)   ───► Windows / macOS / Linux
+```
+
+One codebase: a change in `frontend/` reaches every target on the next build.
+Two things differ in a packaged build and both fail *silently*, so both are
+handled automatically — assets switch to relative paths (`--mode app`), and API
+calls switch to an absolute base because a packaged app is no longer same-origin
+with its backend.
+
+Desktop is verified working end to end. Android scaffolds and Gradle runs, but
+no APK has been produced yet, and **it cannot be built from this repo's path** —
+`ドキュメント` breaks the Gradle wrapper. APPS.md has the workaround.
+
 ## Install it on your phone
 
 The app is a PWA: **Add to home screen** gives it its own icon, full-screen

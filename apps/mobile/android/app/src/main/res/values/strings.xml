@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Stock Analysis</string>
+    <string name="title_activity_main">Stock Analysis</string>
+    <string name="package_name">studio.tin.stockanalysis</string>
+    <string name="custom_url_scheme">studio.tin.stockanalysis</string>
+</resources>

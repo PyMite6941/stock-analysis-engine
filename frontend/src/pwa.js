@@ -6,6 +6,8 @@
 // one rule this file exists to enforce is that a stale price must never be
 // presented as a live one.
 
+import { serviceWorkerUseful } from "./runtime.js";
+
 const SW_URL = "/sw.js";
 const LS_DISMISSED = "sae:install_dismissed";
 
@@ -122,6 +124,10 @@ export function registerServiceWorker() {
   // Dev builds are served by Vite with no /sw.js; registering there would 404
   // and pollute the console on every reload.
   if (!import.meta.env.PROD) return;
+  // A packaged app already ships its assets natively — a worker would only add
+  // a second, staler copy, and on Electron's file:// origin it cannot register
+  // at all.
+  if (!serviceWorkerUseful()) return;
 
   window.addEventListener("load", () => {
     navigator.serviceWorker.register(SW_URL).then((reg) => {
