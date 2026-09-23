@@ -81,12 +81,16 @@ export function preferTick(existing, incoming) {
  *   - auto-reconnects; unsubscribes + closes on cleanup
  *   - if no token is configured, returns connected:false (UI falls back to polling)
  *
- * Returns { prices: { SYMBOL: { price, ts } }, connected }.
+ * Returns { prices: { SYMBOL: { price, ts } }, connected, lastTick }.
  * Note: Finnhub only streams trades during market hours — quiet outside RTH.
  */
 export function useRealtime(symbols) {
   const [prices, setPrices] = useState({});
   const [connected, setConnected] = useState(false);
+  // When a tick last ARRIVED, not the exchange timestamp on it. The two differ
+  // when the tape is delayed, and what the status line is really reporting is
+  // whether this app is still hearing from the market.
+  const [lastTick, setLastTick] = useState(null);
   const key = symbols.join(",");
   const symbolsRef = useRef(symbols);
   symbolsRef.current = symbols;
@@ -136,6 +140,7 @@ export function useRealtime(symbols) {
       if (Object.keys(pending).length) {
         setPrices((prev) => ({ ...prev, ...pending }));
         pending = {};
+        setLastTick(Date.now());
       }
     }, 500);
 
@@ -154,5 +159,5 @@ export function useRealtime(symbols) {
     };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { prices, connected };
+  return { prices, connected, lastTick };
 }

@@ -26,7 +26,8 @@ class Position:
     shares: float
     cost_basis: float                  # price paid per share
     opened: Optional[str] = None       # ISO date
-    note: Optional[str] = None
+    note: Optional[str] = None         # why it was bought
+    exit_plan: Optional[str] = None    # what would make you sell
     id: Optional[str] = None           # client-generated, round-trips untouched
 
     def to_dict(self) -> dict:
@@ -57,6 +58,7 @@ def parse_positions(raw: list[dict]) -> list[Position]:
             symbol=symbol, shares=shares, cost_basis=cost_basis,
             opened=(str(r["opened"]) if r.get("opened") else None),
             note=(str(r["note"]) if r.get("note") else None),
+            exit_plan=(str(r["exit_plan"]) if r.get("exit_plan") else None),
             id=(str(r["id"]) if r.get("id") else None),
         ))
     return out
@@ -204,7 +206,8 @@ def _argextreme(rows: list[dict], key: str, fn):
 # Export
 # ---------------------------------------------------------------------------
 CSV_COLUMNS = ["symbol", "shares", "cost_basis", "opened", "cost", "price",
-               "market_value", "pnl", "pnl_pct", "day_pnl", "weight_pct", "note"]
+               "market_value", "pnl", "pnl_pct", "day_pnl", "weight_pct", "note",
+               "exit_plan"]
 
 
 def to_csv_rows(rows: list[dict]) -> list[list]:

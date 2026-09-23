@@ -228,6 +228,33 @@ export async function exportRealized(sales, format = "csv") {
   saveBlob(blob, `realized_gains.${format === "xlsx" ? "xlsx" : "csv"}`);
 }
 
+// Form 8949 / Schedule D. `basisReported` picks the 8949 box: true for a
+// covered security (the usual case), false when the 1099-B came without a
+// basis, null when there is no 1099-B at all.
+export function taxReport(sales, positions = [], year = null,
+                          basisReported = true) {
+  return post("/api/portfolio/tax",
+    { sales, positions, year, basis_reported: basisReported });
+}
+
+export async function exportTax(sales, positions = [], year = null,
+                                basisReported = true, format = "csv") {
+  const blob = await postBlob("/api/portfolio/tax/export",
+    { sales, positions, year, basis_reported: basisReported, format });
+  saveBlob(blob, `form_8949_${year || "all"}.${format === "xlsx" ? "xlsx" : "csv"}`);
+}
+
+// What is scheduled ahead for what you hold — earnings and ex-dividend dates.
+export function portfolioEvents(positions = [], symbols = [], withinDays = 90) {
+  return post("/api/portfolio/events",
+    { positions, symbols, within_days: withinDays });
+}
+
+// The book as one object: concentration, correlated clusters, portfolio risk.
+export function portfolioRisk(positions, period = "1y") {
+  return post("/api/portfolio/risk", { positions, period });
+}
+
 // One click, one file. Everything the user has — watchlist analysis, holdings,
 // performance, dividends and closed trades — as a single multi-sheet workbook,
 // because "export my data" almost never means "give me six separate files".

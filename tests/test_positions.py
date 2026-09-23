@@ -174,3 +174,26 @@ def test_import_drops_incomplete_rows():
     back = exports.parse_positions_file(
         "e.csv", b"Symbol,Shares,Cost Basis\nAAPL,10,100\nBAD,,\n,5,5\n")
     assert [r["symbol"] for r in back] == ["AAPL"]
+
+
+def test_exit_plan_round_trips_through_parse_and_valuation():
+    """The sell condition must survive the trip, or it silently vanishes.
+
+    It is stored in localStorage, posted to the API and written back into
+    exports; a field dropped anywhere in that chain looks saved and isn't.
+    """
+    from core.positions import parse_positions, value_position
+    lots = parse_positions([{
+        "symbol": "NVDA", "shares": 10, "cost_basis": 100.0,
+        "note": "cheap vs peers", "exit_plan": "margins below 60%",
+    }])
+    assert lots[0].exit_plan == "margins below 60%"
+    row = value_position(lots[0], 120.0)
+    assert row["exit_plan"] == "margins below 60%"
+    assert row["note"] == "cheap vs peers"
+
+
+def test_missing_exit_plan_is_none_not_absent():
+    from core.positions import parse_positions
+    lots = parse_positions([{"symbol": "X", "shares": 1, "cost_basis": 1.0}])
+    assert lots[0].exit_plan is None

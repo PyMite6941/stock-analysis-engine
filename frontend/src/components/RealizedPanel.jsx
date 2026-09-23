@@ -229,8 +229,9 @@ export default function RealizedPanel({ sales, setSales, positions,
 
       <p className="fine-print">
         A personal record kept in this browser, not a tax document — your broker's
-        1099 is the authority, and it may apply wash-sale rules and adjustments
-        this does not. <Explain term="Cost basis" enabled={beginner}>Cost basis</Explain>{" "}
+        1099 is the authority. These are raw gains; wash-sale adjustments and
+        the Form 8949 boxes are in the tax panel below.{" "}
+        <Explain term="Cost basis" enabled={beginner}>Cost basis</Explain>{" "}
         comes from the lots you sold against. Not tax advice.
       </p>
     </section>

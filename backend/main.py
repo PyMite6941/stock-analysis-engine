@@ -27,7 +27,8 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from core import (assets, backtest, compare, correlation, data, daytrade,
-                  forecast, income, indicators, metrics, positions, realized)
+                  events, forecast, income, indicators, metrics, positions,
+                  realized, risk, tax)
 from backend import ai, exports, vision
 from backend.middleware import SecurityAndAuthMiddleware, logger
 
@@ -107,6 +108,7 @@ class PositionIn(BaseModel):
     cost_basis: float
     opened: Optional[str] = None
     note: Optional[str] = None
+    exit_plan: Optional[str] = None
     id: Optional[str] = None
 
 
@@ -163,6 +165,28 @@ class RealizedRequest(BaseModel):
 class PortfolioAnalysisRequest(BaseModel):
     positions: list[PositionIn] = []
     period: str = "1y"
+
+
+class TaxRequest(BaseModel):
+    """Form 8949 / Schedule D for one tax year.
+
+    `basis_reported` decides which 8949 box each row lands in. We cannot know
+    it — only the 1099-B says — so it is the caller's to set: true for a
+    covered security (the common case), false when a 1099-B came without basis,
+    null when there is no 1099-B at all.
+    """
+    sales: list[SaleIn] = []
+    positions: list[PositionIn] = []
+    year: Optional[int] = None
+    basis_reported: Optional[bool] = True
+    format: str = "csv"
+
+
+class EventsRequest(BaseModel):
+    """Upcoming dated events for a set of symbols."""
+    symbols: list[str] = []
+    positions: list[PositionIn] = []
+    within_days: int = 90
 
 
 class ExportAllRequest(BaseModel):
@@ -594,6 +618,159 @@ def portfolio_realized_export(req: RealizedRequest):
     raise HTTPException(400, f"Unsupported format {fmt!r}. Use 'csv' or 'xlsx'.")
 
 
+@app.post("/api/portfolio/tax")
+def portfolio_tax(req: TaxRequest):
+    """Form 8949 rows, Schedule D subtotals, and the wash sales behind them.
+
+    Stateless like every other portfolio route: the client sends what it has
+    stored and gets the worksheet back. Nothing is retained here.
+    """
+    sales = realized.parse_sales([s.model_dump() for s in req.sales])
+    lots = positions.parse_positions([p.model_dump() for p in req.positions])
+    form = tax.form_8949_rows(sales, lots, req.year, req.basis_reported)
+    return {
+        "form_8949": form["rows"],
+        "schedule_d": tax.schedule_d(form["rows"]),
+        "year": req.year,
+        "basis_reported": req.basis_reported,
+        "n_wash": form["n_wash"],
+        "total_disallowed": form["total_disallowed"],
+        "crypto_exempt": form["crypto_exempt"],
+        "years_available": sorted(
+            {str(s.get("closed") or "")[:4] for s in sales
+             if str(s.get("closed") or "")[:4].isdigit()}, reverse=True),
+    }
+
+
+@app.post("/api/portfolio/tax/export")
+def portfolio_tax_export(req: TaxRequest):
+    """The tax worksheet as CSV (8949 only) or XLSX (8949 + D + wash sales)."""
+    sales = realized.parse_sales([s.model_dump() for s in req.sales])
+    if not sales:
+        raise HTTPException(422, "No sales to report.")
+    lots = positions.parse_positions([p.model_dump() for p in req.positions])
+    form = tax.form_8949_rows(sales, lots, req.year, req.basis_reported)
+    if not form["rows"]:
+        raise HTTPException(
+            422, f"No sales closed in {req.year}." if req.year
+            else "No sales to report.")
+
+    year = req.year or "all"
+    fmt = (req.format or "csv").lower()
+
+    if fmt == "csv":
+        return Response(
+            content=exports.rows_to_csv(tax.to_csv_rows(form["rows"])),
+            media_type="text/csv",
+            headers={"Content-Disposition":
+                     f"attachment; filename=form_8949_{year}.csv"})
+
+    if fmt in ("xlsx", "excel"):
+        d = tax.schedule_d(form["rows"])
+        sheets = {
+            "Form 8949": tax.to_csv_rows(form["rows"]),
+            "Schedule D": (
+                [["Box", "Term", "Rows", "Proceeds", "Cost basis",
+                  "Adjustment", "Gain or (loss)"]]
+                + [[l["box"], l["term"], l["n_rows"], l["proceeds"],
+                    l["cost_basis"], l["adjustment"], l["gain_loss"]]
+                   for l in d["lines"]]
+                + [[]]
+                + [["Short-term net", "", "", d["short_term"]["proceeds"],
+                    d["short_term"]["cost_basis"],
+                    d["short_term"]["adjustment"], d["short_term"]["net"]],
+                   ["Long-term net", "", "", d["long_term"]["proceeds"],
+                    d["long_term"]["cost_basis"],
+                    d["long_term"]["adjustment"], d["long_term"]["net"]],
+                   ["Net gain or (loss)", "", "", "", "", "",
+                    d["net_gain_loss"]]]
+                + ([["Deductible this year (capped at $3,000)", "", "", "", "",
+                     "", d["deductible_loss"]],
+                    ["Carried forward", "", "", "", "", "",
+                     d["loss_carryforward"] or 0]]
+                   if d["deductible_loss"] is not None else [])),
+            "Wash Sales": tax.wash_csv_rows(form["rows"]),
+        }
+        try:
+            body = exports.sheets_to_xlsx(sheets)
+        except exports.XlsxUnavailable as e:
+            raise HTTPException(501, str(e))
+        return Response(
+            content=body,
+            media_type="application/vnd.openxmlformats-officedocument."
+                       "spreadsheetml.sheet",
+            headers={"Content-Disposition":
+                     f"attachment; filename=form_8949_{year}.xlsx"})
+
+    raise HTTPException(400, f"Unsupported format {fmt!r}. Use 'csv' or 'xlsx'.")
+
+
+@app.post("/api/portfolio/events")
+def portfolio_events(req: EventsRequest):
+    """Dated events ahead for the symbols you hold: earnings and ex-dividends.
+
+    The forecast cone has no idea an earnings report is coming, which is the
+    single most common reason a stock gaps overnight. This is the missing
+    context, not a prediction.
+    """
+    symbols = events.symbols_from(
+        req.symbols, [p.model_dump() for p in req.positions])
+    if not symbols:
+        return {"events": [], "by_symbol": {}, "n": 0, "within_days": req.within_days}
+
+    with ThreadPoolExecutor(max_workers=min(8, max(1, len(symbols)))) as ex:
+        fundamentals = dict(zip(
+            symbols, ex.map(_safe_fundamentals, symbols)))
+
+    cal = events.build_calendar(fundamentals, within_days=req.within_days)
+    return {**cal, "symbols": symbols}
+
+
+def _safe_fundamentals(symbol: str):
+    """Fundamentals for one symbol, or None — one bad ticker can't kill a page."""
+    try:
+        return data.get_fundamentals(symbol)
+    except Exception as e:          # noqa: BLE001 - any provider failure
+        logger.warning("fundamentals failed for %s: %s", symbol, e)
+        return None
+
+
+@app.post("/api/portfolio/risk")
+def portfolio_risk(req: PortfolioAnalysisRequest):
+    """Portfolio-level risk: concentration, correlation clusters, drawdown.
+
+    Per-symbol Sharpe and VaR are already elsewhere. This is the roll-up — the
+    numbers that describe the book as one thing, which is what actually decides
+    what to buy next.
+    """
+    lots = positions.parse_positions([p.model_dump() for p in req.positions])
+    if not lots:
+        raise HTTPException(422, "No positions to analyse.")
+
+    symbols = sorted({l.symbol for l in lots})
+    quotes = data.get_quotes(symbols)
+    priced = [q for q in quotes if not q.not_found and q.price is not None]
+    if not priced:
+        raise HTTPException(422, "No prices available for these positions.")
+
+    with ThreadPoolExecutor(max_workers=min(8, max(1, len(symbols)))) as ex:
+        hist = dict(zip(symbols, ex.map(
+            lambda s: _safe_history(s, req.period), symbols)))
+    histories = {s: {"dates": h.dates, "closes": h.closes}
+                 for s, h in hist.items() if h and len(h.closes) > 1}
+
+    valued = positions.value_portfolio(lots, quotes)
+    return risk.portfolio_risk(valued, histories, period=req.period)
+
+
+def _safe_history(symbol: str, period: str):
+    try:
+        return data.get_history(symbol, period)
+    except Exception as e:          # noqa: BLE001
+        logger.warning("history failed for %s: %s", symbol, e)
+        return None
+
+
 @app.post("/api/export/all")
 def export_all(req: ExportAllRequest):
     """One click, one file: every sheet the user could want.
@@ -727,6 +904,32 @@ def export_all(req: ExportAllRequest):
             notes.append(["Realized Gains", f"{len(sold)} closed trade" + ("s" if len(sold) != 1 else "")])
         except Exception as e:  # noqa: BLE001
             notes.append(["Realized Gains", f"skipped: {e}"])
+
+        # Tax worksheet for the CURRENT year only. "Everything" here means
+        # everything you'd hand to someone; a single 8949 covering six years at
+        # once is not a form anyone can file.
+        try:
+            lots = positions.parse_positions([p.model_dump() for p in req.positions])
+            year = datetime.now().year
+            form = tax.form_8949_rows(sold, lots, year)
+            if form["rows"]:
+                sheets[f"Form 8949 ({year})"] = tax.to_csv_rows(form["rows"])
+                d = tax.schedule_d(form["rows"])
+                sheets["Schedule D"] = (
+                    [["Box", "Term", "Rows", "Proceeds", "Cost basis",
+                      "Adjustment", "Gain or (loss)"]]
+                    + [[l["box"], l["term"], l["n_rows"], l["proceeds"],
+                        l["cost_basis"], l["adjustment"], l["gain_loss"]]
+                       for l in d["lines"]]
+                    + [[], ["Net gain or (loss)", "", "", "", "", "",
+                            d["net_gain_loss"]]])
+                if form["n_wash"]:
+                    sheets["Wash Sales"] = tax.wash_csv_rows(form["rows"])
+                notes.append([f"Form 8949 ({year})",
+                              f"{len(form['rows'])} rows, "
+                              f"{form['n_wash']} wash sale(s)"])
+        except Exception as e:  # noqa: BLE001
+            notes.append(["Form 8949", f"skipped: {e}"])
 
     if not sheets:
         raise HTTPException(

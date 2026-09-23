@@ -10,7 +10,7 @@ import Explain from "./Explain.jsx";
 import PhotoImport from "./PhotoImport.jsx";
 
 const BLANK = { symbol: "", shares: "", cost_basis: "", opened: "",
-                openedTime: "", note: "" };
+                openedTime: "", note: "", exit_plan: "" };
 const SELL_BLANK = { symbol: "", shares: "", price: "", date: "", time: "",
                      method: "fifo" };
 
@@ -76,6 +76,7 @@ export default function PositionsPanel({ beginner = false, livePrices = {},
       cost_basis: Number(form.cost_basis),
       opened: stamp(form.opened, form.openedTime),
       note: form.note?.trim() || null,
+      exit_plan: form.exit_plan?.trim() || null,
     };
     if (!entry.symbol) return setError("Enter a ticker symbol.");
     if (!Number.isFinite(entry.shares) || entry.shares === 0)
@@ -99,6 +100,7 @@ export default function PositionsPanel({ beginner = false, livePrices = {},
       symbol: row.symbol, shares: String(row.shares),
       cost_basis: String(row.cost_basis), opened: when.date,
       openedTime: when.time, note: row.note || "",
+      exit_plan: row.exit_plan || "",
     });
     setError(null);
   }
@@ -312,6 +314,12 @@ export default function PositionsPanel({ beginner = false, livePrices = {},
                     {r.opened && <div className="muted tiny">{r.opened}</div>}
                     {r.note && <div className="muted tiny" title={r.note}>
                       {r.note.length > 18 ? `${r.note.slice(0, 18)}…` : r.note}</div>}
+                    {r.exit_plan && (
+                      <div className="exit-plan tiny" title={`Sell when: ${r.exit_plan}`}>
+                        ⤶ {r.exit_plan.length > 18
+                          ? `${r.exit_plan.slice(0, 18)}…` : r.exit_plan}
+                      </div>
+                    )}
                   </td>
                   <td>{num(r.shares, 4)}</td>
                   <td>${num(r.cost_basis)}</td>
@@ -467,9 +475,16 @@ export default function PositionsPanel({ beginner = false, livePrices = {},
                    onChange={(e) => setForm({ ...form, openedTime: e.target.value })} />
           </label>
           <label className="grow">
-            <span>Note <em>(optional)</em></span>
-            <input value={form.note} placeholder="why you bought it"
+            <span>Why you bought it <em>(optional)</em></span>
+            <input value={form.note} placeholder="post-earnings add, cheap vs peers…"
                    onChange={(e) => setForm({ ...form, note: e.target.value })} />
+          </label>
+          <label className="grow">
+            <span>What would make you sell <em>(optional)</em></span>
+            <input value={form.exit_plan}
+                   placeholder="margins fall below 60%, or +40%"
+                   title="Written now, while you have no position to defend"
+                   onChange={(e) => setForm({ ...form, exit_plan: e.target.value })} />
           </label>
           <div className="pos-submit">
             <button type="submit">{editing ? "Save" : "Add position"}</button>

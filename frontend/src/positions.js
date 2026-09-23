@@ -54,6 +54,11 @@ function normalize(p) {
     cost_basis: Number(p.cost_basis),
     opened: p.opened || null,
     note: p.note || null,
+    // Why you'd sell, written while you still have no position to defend.
+    // Separate from `note` on purpose: the reason you bought and the condition
+    // that would change your mind are different thoughts, and merging them
+    // into one box means the second never gets written.
+    exit_plan: p.exit_plan || null,
   };
 }
 
@@ -123,7 +128,8 @@ export function markToMarket(list, priceBySymbol) {
 // CSV is generated here as well as on the server so the button still works when
 // the backend is unreachable — the list is local data, it shouldn't need a
 // round trip to save.
-const CSV_COLUMNS = ["symbol", "shares", "cost_basis", "opened", "note"];
+const CSV_COLUMNS = ["symbol", "shares", "cost_basis", "opened", "note",
+                     "exit_plan"];
 
 export function positionsToCsv(list) {
   const esc = (v) => {
@@ -208,6 +214,10 @@ const ALIASES = {
 
   note: ["note", 10], notes: ["note", 10],
   comment: ["note", 6], memo: ["note", 6],
+
+  exit_plan: ["exit_plan", 10], "exit plan": ["exit_plan", 10],
+  "sell plan": ["exit_plan", 9], "exit strategy": ["exit_plan", 9],
+  thesis: ["exit_plan", 5],
 };
 
 const PRICE_ISH = new Set(["price", "last", "last price", "current price",
@@ -296,6 +306,7 @@ export function csvToPositions(text) {
       price_hint: num(r[cols.price_hint]),
       opened: str(r, cols.opened),
       note: str(r, cols.note),
+      exit_plan: str(r, cols.exit_plan),
     };
     resolveCostBasis(rec, ambiguous);
     delete rec.total_cost;

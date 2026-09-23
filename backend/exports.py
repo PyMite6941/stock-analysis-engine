@@ -172,6 +172,10 @@ _ALIASES = {
 
     "note": ("note", 10), "notes": ("note", 10),
     "comment": ("note", 6), "memo": ("note", 6),
+
+    "exit_plan": ("exit_plan", 10), "exit plan": ("exit_plan", 10),
+    "sell plan": ("exit_plan", 9), "exit strategy": ("exit_plan", 9),
+    "thesis": ("exit_plan", 5),
 }
 
 

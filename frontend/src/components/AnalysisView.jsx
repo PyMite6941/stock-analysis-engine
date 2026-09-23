@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { analyze, quotes, asset as fetchAsset, holdings as fetchHoldings,
          searchSymbols } from "../api.js";
 import { useRealtime } from "../useRealtime.js";
+import { allContinuous } from "../market.js";
 import { getMode, isHidden } from "../modes.js";
 import { loadPositions, savePositions } from "../positions.js";
 import { addSales, loadSales, saveSales } from "../sales.js";
@@ -30,6 +31,10 @@ import CorrelationPanel from "./CorrelationPanel.jsx";
 import PortfolioForecastPanel from "./PortfolioForecastPanel.jsx";
 import AlertsPanel from "./AlertsPanel.jsx";
 import RealizedPanel from "./RealizedPanel.jsx";
+import PriceClock from "./PriceClock.jsx";
+import RiskPanel from "./RiskPanel.jsx";
+import TaxPanel from "./TaxPanel.jsx";
+import EventsPanel from "./EventsPanel.jsx";
 
 // Window used for the analysis fetch and the AI context. The chart and the
 // gain/loss panel each carry their own timeframe picker, so a third selector
@@ -74,7 +79,8 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
   // even when the holding isn't in the current watchlist.
   const watched = [...new Set([...symbols, ...positions.map((p) => p.symbol),
                               ...alertSymbols(alerts)])];
-  const { prices: livePrices, connected: live } = useRealtime(watched);
+  const { prices: livePrices, connected: live, lastTick } =
+    useRealtime(watched);
 
   function setPositions(next) {
     setPositionsState(Array.isArray(next) ? next : loadPositions());
@@ -127,6 +133,10 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
       }
       const result = await analyze(wanted, period);
       setData(result);
+      // This IS a price fetch, so it dates the quotes on screen. Without it the
+      // clock reads "waiting for prices" while showing prices, until the 30s
+      // poll first fires.
+      setLastPoll(new Date());
       // Some symbols resolved, some didn't — show the good ones and name the bad.
       setNotFound(result.not_found?.length ? result.not_found : null);
       const saved = localStorage.getItem(LS_FOCUSED);
@@ -266,11 +276,14 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
         <ExportMenu symbols={symbols} positions={positions} sales={sales}
                     period={period} data={data} />
       </section>
-      {data && <p className="muted" style={{ fontSize: "0.78rem", margin: "4px 0 0" }}>
-        {live
-          ? <><span className="live-dot">● LIVE</span> real-time prices (Finnhub WebSocket)</>
-          : <>Quotes refresh every 30s{lastPoll ? ` · updated ${lastPoll.toLocaleTimeString()}` : ""}</>}
-      </p>}
+      {data && (
+        <PriceClock
+          lastTick={lastTick}
+          lastPoll={lastPoll ? lastPoll.getTime() : null}
+          streaming={live}
+          continuous={allContinuous(watched)}
+        />
+      )}
 
       {notFound && (
         <div className="not-found-banner">
@@ -319,6 +332,9 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
                 </p>
               )}
 
+              <EventsPanel positions={positions} symbols={symbols}
+                           beginner={beginner} onSelect={focusSymbol} />
+
               <PositionsPanel
                 beginner={beginner}
                 livePrices={livePrices}
@@ -336,10 +352,16 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
                 onSelect={focusSymbol}
               />
 
+              <TaxPanel sales={sales} positions={positions}
+                        beginner={beginner} />
+
               <IncomePanel positions={positions} beginner={beginner}
                            onSelect={focusSymbol} />
 
               <PortfolioForecastPanel positions={positions} beginner={beginner} />
+
+              <RiskPanel positions={positions} beginner={beginner}
+                         onSelect={focusSymbol} />
 
               <CorrelationPanel positions={positions} beginner={beginner}
                                 onSelect={focusSymbol} />

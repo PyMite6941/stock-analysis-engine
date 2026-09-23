@@ -129,6 +129,9 @@ class Fundamentals:
     pe_ttm: Optional[float] = None
     eps_ttm: Optional[float] = None
     earnings_date: Optional[str] = None
+    # Yahoo flags dates it inferred from past cadence rather than a company
+    # announcement. Worth showing: an estimated date can move by a week.
+    earnings_date_estimated: bool = False
     forward_dividend: Optional[float] = None
     dividend_yield_pct: Optional[float] = None
     ex_dividend_date: Optional[str] = None
@@ -477,8 +480,8 @@ class YFinanceProvider:
             beta=_safe_float(info.get("beta")),
             pe_ttm=_safe_float(info.get("trailingPE")),
             eps_ttm=_safe_float(info.get("trailingEps")),
-            earnings_date=_unix_to_date(info.get("earningsTimestamp")
-                                        or info.get("earningsTimestampStart")),
+            earnings_date=_next_earnings_date(info),
+            earnings_date_estimated=bool(info.get("isEarningsDateEstimate")),
             forward_dividend=fwd_div,
             dividend_yield_pct=div_yield,
             ex_dividend_date=_unix_to_date(info.get("exDividendDate")),
@@ -1194,6 +1197,29 @@ def _unix_to_date(ts) -> Optional[str]:
         return datetime.utcfromtimestamp(int(ts)).strftime("%Y-%m-%d")
     except (TypeError, ValueError, OSError):
         return None
+
+
+def _next_earnings_date(info: dict) -> Optional[str]:
+    """The NEXT earnings date, not the last one.
+
+    Yahoo ships several earnings timestamps and they mean different things:
+    `earningsTimestamp` is the most recent REPORT, while
+    `earningsTimestampStart/End` bracket the next expected one. Reading the
+    first field alone — which is the obvious thing to do — gives you a date
+    that is usually in the past, so a "what's coming up" calendar built on it
+    silently shows nothing.
+
+    So: take every candidate, keep the earliest one still ahead of us, and only
+    fall back to the most recent past date when nothing is scheduled.
+    """
+    keys = ("earningsTimestampStart", "earningsTimestamp",
+            "earningsTimestampEnd", "earningsCallTimestampStart")
+    dates = sorted({d for d in (_unix_to_date(info.get(k)) for k in keys) if d})
+    if not dates:
+        return None
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    future = [d for d in dates if d >= today]
+    return future[0] if future else dates[-1]
 
 
 def _period_to_days(period: str) -> int:

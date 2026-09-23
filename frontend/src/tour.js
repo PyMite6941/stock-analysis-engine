@@ -59,6 +59,26 @@ export const STEPS = [
     scrollTo: true,
   },
   {
+    id: "events",
+    title: "What's scheduled next",
+    body: "Earnings dates and ex-dividend dates for what you hold. Earnings is "
+      + "the most common reason a position gaps overnight, and the forecast "
+      + "below has no idea it's coming — so this is the context the maths "
+      + "can't give you. It tells you when, never which way.",
+    target: ".events-panel",
+    scrollTo: true,
+  },
+  {
+    id: "tax",
+    title: "Form 8949 and Schedule D",
+    body: "Once you've sold something, this builds the actual tax lines: every "
+      + "trade in its right box, split short vs long term. It also catches wash "
+      + "sales — sell at a loss, buy back within 30 days, and the IRS disallows "
+      + "the loss. It shows which purchase caused each one.",
+    target: ".tax-panel",
+    scrollTo: true,
+  },
+  {
     id: "export",
     title: "Get your data out in one click",
     body: "Export everything writes a single Excel file with every sheet — "
@@ -91,6 +111,16 @@ export const STEPS = [
       + "is measured from what you paid. They often disagree in direction. Both "
       + "are shown side by side.",
     target: ".compare-panel",
+    scrollTo: true,
+  },
+  {
+    id: "risk",
+    title: "Your portfolio as one thing",
+    body: "Every other panel measures one stock. This measures the book: how "
+      + "much sits in your largest holding, how many positions it really "
+      + "behaves like, and which holdings move together — the ones that will "
+      + "all be red on the same morning.",
+    target: ".risk-panel",
     scrollTo: true,
   },
   {

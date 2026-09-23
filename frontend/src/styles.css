@@ -1332,3 +1332,97 @@ button.icon.sell:hover { background: var(--accent); color: #0d1117; }
   .symbol-results li { grid-template-columns: 72px minmax(0,1fr); }
   .sr-class { display: none; }
 }
+
+/* --- Tax forms, upcoming events, portfolio risk ------------------------- */
+
+/* A standing note that changes how a number should be read, rather than an
+   error. Used for the $3,000 loss cap and the crypto wash-sale exemption. */
+.callout { border-left: 3px solid var(--accent); background: rgba(88,166,255,0.07);
+           border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 12px 0;
+           font-size: 0.85rem; line-height: 1.6; }
+
+/* One-sentence summary at the head of a panel. */
+.verdict { font-size: 0.92rem; line-height: 1.6; margin: 4px 0 14px;
+           padding-left: 10px; border-left: 3px solid var(--border); }
+
+.pf-card.warn { border-color: rgba(210,153,34,0.5); }
+.pf-card.warn .v { color: #d29922; }
+
+.tax-controls { display: flex; flex-wrap: wrap; align-items: baseline;
+                gap: 8px 14px; margin-bottom: 12px; }
+.tax-controls label { display: flex; align-items: center; gap: 8px; }
+.tax-controls .k { color: var(--muted); font-size: 0.78rem; }
+.tax-controls .hint { margin: 0; font-size: 0.76rem; color: var(--muted);
+                      flex: 1 1 260px; }
+
+/* Form 8949 is a money grid: right-aligning the numeric columns is what makes
+   a column of figures checkable at a glance. */
+.tax-table td:nth-child(n+4) { text-align: right; font-variant-numeric: tabular-nums; }
+.tax-table th:nth-child(n+4) { text-align: right; }
+.tax-table td:nth-child(6), .tax-table th:nth-child(6) { text-align: center; }
+
+.term-tag.wash { background: rgba(210,153,34,0.18); color: #d29922; }
+
+.wash-list, .event-list, .cluster-list, .weight-list {
+  list-style: none; padding: 0; margin: 6px 0 0;
+}
+.wash-list li { display: grid; grid-template-columns: 70px 1fr; gap: 2px 10px;
+                padding: 7px 10px; border: 1px solid var(--border);
+                border-radius: 8px; font-size: 0.82rem; }
+.wash-list li + li { margin-top: 5px; }
+.wash-list li .muted { grid-column: 2; font-size: 0.76rem; }
+
+.event-list li { display: flex; align-items: center; gap: 10px;
+                 padding: 8px 10px; border: 1px solid var(--border);
+                 border-radius: 8px; font-size: 0.85rem; }
+.event-list li + li { margin-top: 5px; }
+.ev-icon { flex: 0 0 auto; }
+.ev-label { flex: 1 1 auto; }
+.ev-date { flex: 0 0 auto; font-size: 0.76rem; font-variant-numeric: tabular-nums; }
+/* Urgency is carried by a left edge rather than a coloured row: an earnings
+   date is not good or bad news, only near or far. */
+.event.imminent { border-left: 3px solid #d29922; }
+.event.soon { border-left: 3px solid var(--accent); }
+.tag.imminent { background: rgba(210,153,34,0.18); color: #d29922; }
+
+.weight-list li { display: grid; grid-template-columns: 68px 1fr 54px;
+                  align-items: center; gap: 10px; padding: 3px 0; }
+.weight-track { height: 8px; border-radius: 999px; background: var(--border);
+                overflow: hidden; }
+.weight-fill { display: block; height: 100%; border-radius: 999px;
+               background: var(--accent); }
+.weight-fill.hot { background: #d29922; }
+.weight-val { text-align: right; font-size: 0.8rem;
+              font-variant-numeric: tabular-nums; color: var(--muted); }
+
+.cluster-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+                   padding: 8px 10px; border: 1px solid var(--border);
+                   border-radius: 8px; font-size: 0.82rem; }
+.cluster-list li + li { margin-top: 5px; }
+
+@media (max-width: 620px) {
+  .event-list li { flex-wrap: wrap; }
+  .ev-label { flex: 1 0 100%; order: 3; }
+  .weight-list li { grid-template-columns: 58px 1fr 48px; }
+}
+
+/* --- Price freshness clock ---------------------------------------------- */
+.price-clock { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+               font-size: 0.78rem; color: var(--muted); margin: 5px 0 0; }
+.clock-dot { font-size: 0.6rem; line-height: 1; }
+.clock-dot.live { color: var(--pos); animation: clock-pulse 2s ease-in-out infinite; }
+.clock-dot.shut { color: var(--muted); }
+.clock-dot.stale { color: #d29922; animation: none; }
+/* Stale is the one state worth reading mid-task, so it gets the text colour
+   too rather than only a dot that is easy to miss. */
+.price-clock.stale { color: #d29922; }
+
+@keyframes clock-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .clock-dot.live { animation: none; }
+}
+
+/* An exit plan is a commitment you made to yourself, so it reads differently
+   from the note beside it rather than blending into the same grey. */
+.exit-plan { color: var(--accent); opacity: 0.85; }

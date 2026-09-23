@@ -77,6 +77,10 @@ streamlit run offline/app.py
 | POST | `/api/portfolio/sell` | match a sale against open lots (FIFO/LIFO/specific) |
 | POST | `/api/portfolio/realized` | realised gains, short vs long term, per year |
 | POST | `/api/portfolio/realized/export` | realised gains as CSV or XLSX |
+| POST | `/api/portfolio/tax` | Form 8949 rows, Schedule D totals, wash sales |
+| POST | `/api/portfolio/tax/export` | Form 8949 as CSV, or 8949 + D + wash sales as XLSX |
+| POST | `/api/portfolio/events` | upcoming earnings and ex-dividend dates |
+| POST | `/api/portfolio/risk` | concentration, correlated clusters, portfolio risk |
 
 A ticker that doesn't exist returns **404** with
 `{"error": "symbol_not_found", "detail": "Stock/ETF not found: XYZ..."}` rather
@@ -258,6 +262,12 @@ as a date or a date and clock time (`2026-09-16 09:45`). The time matters for
 intraday trades: buy and sell inside one session and the holding period is
 measured in minutes, not days, and the trade is tagged as a day trade.
 
+A position also carries two free-text fields kept deliberately separate:
+**why you bought it**, and **what would make you sell**. They are different
+thoughts — the second is a commitment made while you still have no position to
+defend — and merging them into one box means the second never gets written. Both
+round-trip through CSV/XLSX export and import.
+
 Selling matches against specific lots, which is where the real accounting lives:
 
 | Method | Picks |
@@ -269,7 +279,91 @@ Selling matches against specific lots, which is where the real accounting lives:
 Realised gains are split into **short-term** and **long-term** (over one year),
 because that split drives the tax bill, and open lots within 45 days of crossing
 into long-term treatment get a countdown. A personal record, not a tax document —
-your broker's 1099 is the authority and may apply wash-sale rules this does not.
+your broker's 1099 is the authority.
+
+## Tax forms
+
+`/api/portfolio/tax` turns closed trades into the lines the IRS actually asks
+for: **Form 8949** rows in their correct box, and the **Schedule D** subtotals
+that flow to the 1040. Two things sit between "what did I make" and "what do I
+file", and both are handled here.
+
+**Wash sales.** Sell at a loss and buy substantially identical stock within 30
+days *either side*, and the loss is disallowed (IRC 1091). The window is centred
+on the sale, so a purchase *before* it counts too — the half of the rule people
+miss. The disallowed amount isn't lost: it is added to the basis of the
+replacement shares. Every flagged row is shown with the specific purchases that
+triggered it, because a number that silently deletes a $5,000 deduction has to
+show its working.
+
+Replacement shares are consumed once and earliest-first, so one 100-share rebuy
+cannot excuse two separate 100-share losses, and a sale is never treated as its
+own replacement.
+
+**Crypto is exempt.** Section 1091 covers "stocks or securities". Crypto is
+currently property, so the wash-sale rule does not reach it — selling a coin at
+a loss and rebuying immediately keeps the loss, and doing the same with a stock
+does not. Applying the rule to crypto would overstate the tax bill, so it is
+skipped and the UI says which symbols that applied to.
+
+**Box classification** depends on whether your broker reported cost basis to the
+IRS, which only the 1099-B knows. It is an input with a sensible default rather
+than a guess presented as fact.
+
+The Schedule D summary also states the **$3,000** annual cap on deducting a net
+capital loss against ordinary income, and the carryforward — "I lost $20k so I
+deduct $20k" is a common and expensive misunderstanding.
+
+Not tax advice, and not a substitute for the 1099-B. It is a worksheet that
+shows its arithmetic so you can check it against the form you receive.
+
+## What's coming up
+
+`/api/portfolio/events` lists the scheduled dates for what you hold: **earnings**
+and **ex-dividend**. The probability cone models price as a random walk, which is
+a fair description of a quiet week and a bad one for the night a company reports
+— so this is the context the maths structurally cannot supply. It says *when*,
+never which way.
+
+One subtlety worth recording: Yahoo ships several earnings timestamps and
+`earningsTimestamp` is the **last** report, not the next. Reading it alone — the
+obvious thing to do — gives a date months in the past for most symbols, so a
+forward calendar built on it silently shows nothing. `_next_earnings_date` takes
+the earliest candidate still ahead, and falls back to the most recent past date
+only when nothing is scheduled. Dates Yahoo inferred from past cadence are
+labelled `(est.)`, because they can move by a week.
+
+## Portfolio risk
+
+`/api/portfolio/risk` measures the book as one object rather than a list of
+symbols, because the risk of adding a position depends entirely on what you
+already hold.
+
+- **Concentration** — largest weight, top-3 weight, and the Herfindahl index,
+  reported as `effective_positions` (1/HHI). Ten holdings where one is 80% is a
+  one-stock portfolio with decoration, and the number says so.
+- **Clusters** — single-link groups of holdings correlated above 0.75. These are
+  the positions that will all be red on the same morning: diversification you
+  think you have and do not.
+- **Portfolio risk** — volatility, Sharpe, Sortino, historical VaR/CVaR and max
+  drawdown computed on the *weighted portfolio return series*, not averaged
+  across holdings. Averaging per-symbol risk overstates it, because it throws
+  away the cancellation that owning different things buys you.
+
+Weights are of market value, not cost. Unpriced holdings are excluded and
+counted rather than silently treated as worthless.
+
+## Price freshness
+
+A number on screen means nothing without knowing how old it is and whether the
+market is open. The status line distinguishes a live stream from a poll, ages it
+in real time, and only calls a price **stale** during a session — an hour-old
+price at 2am is simply the closing price, and warning about it would be noise.
+Crypto is held to the live standard around the clock.
+
+Market holidays are deliberately not modelled: a hardcoded list rots into wrong
+answers. A holiday reads as "open", and the price age catches it anyway, because
+no ticks arrive and the clock climbs on its own.
 
 ## Does the signal actually work?
 
