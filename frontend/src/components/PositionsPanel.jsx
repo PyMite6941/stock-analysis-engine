@@ -8,6 +8,7 @@ import {
 } from "../positions.js";
 import Explain from "./Explain.jsx";
 import PhotoImport from "./PhotoImport.jsx";
+import { backendAvailable } from "../runtime.js";
 import SymbolSearch from "./SymbolSearch.jsx";
 
 const BLANK = { symbol: "", shares: "", cost_basis: "", opened: "",
@@ -542,13 +543,16 @@ export default function PositionsPanel({ beginner = false, livePrices = {},
         </form>
       )}
 
-      <PhotoImport
-        beginner={beginner}
-        onImport={(rows) => {
-          setPositions(mergePositions(positions, rows));
-          flash(`Added ${rows.length} position${rows.length === 1 ? "" : "s"} from the photo.`);
-        }}
-      />
+      {/* Reading a photo needs the vision model on the server. */}
+      {backendAvailable() && (
+        <PhotoImport
+          beginner={beginner}
+          onImport={(rows) => {
+            setPositions(mergePositions(positions, rows));
+            flash(`Added ${rows.length} position${rows.length === 1 ? "" : "s"} from the photo.`);
+          }}
+        />
+      )}
 
       <form className="position-form" onSubmit={submit} ref={formRef}>
         <h3 className="sub-head">{editing ? "Edit position" : "Add a position"}</h3>

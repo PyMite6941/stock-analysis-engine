@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef } from "react";
-import { apiUrl } from "./runtime.js";
+import { apiUrl, backendAvailable } from "./runtime.js";
+import { loadKeys } from "./direct.js";
 
 // Cache the token lookup so every hook instance shares one fetch.
 let _tokenPromise;
 function getToken() {
+  // No backend: stream with the visitor's own Finnhub key (see direct.js).
+  // Not cached, so adding a key later starts streaming on the next page.
+  if (!backendAvailable()) return Promise.resolve(loadKeys().finnhub || null);
   if (!_tokenPromise) {
     _tokenPromise = fetch(apiUrl("/api/realtime-token"))
       .then((r) => r.json())

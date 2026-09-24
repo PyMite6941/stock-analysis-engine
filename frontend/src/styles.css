@@ -1471,3 +1471,59 @@ button.icon.sell:hover { background: var(--accent); color: #0d1117; }
   .pos-empty-ways { flex-direction: column; align-items: stretch; }
   .pos-empty-ways button { width: 100%; }
 }
+
+/* ---- tabs under the chart: one home for every panel ---------------------- */
+.view-tabs { display: flex; gap: 4px; margin: 20px 0 0; border-bottom: 1px solid var(--border);
+  overflow-x: auto; scrollbar-width: none; }
+.view-tabs::-webkit-scrollbar { display: none; }
+.view-tabs button { background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--muted); padding: 10px 14px; font-size: 0.95rem; cursor: pointer;
+  white-space: nowrap; margin-bottom: -1px; }
+.view-tabs button:hover { color: var(--text); }
+.view-tabs button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.view-tab-hint { color: var(--muted); font-size: 0.82rem; margin: 8px 0 4px; }
+.direct-note { background: var(--panel); border: 1px dashed var(--border); border-radius: 10px;
+  padding: 10px 14px; color: var(--muted); font-size: 0.85rem; margin: 12px 0; }
+
+/* ---- market session chip ------------------------------------------------- */
+.session-chip { display: inline-flex; align-items: center; gap: 6px; margin: 10px auto 0;
+  padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px;
+  font-size: 0.8rem; color: var(--muted); }
+.session-chip .clock-dot { font-size: 0.7rem; color: var(--muted); }
+.session-chip.open .clock-dot { color: var(--pos); }
+.session-chip.premarket .clock-dot, .session-chip.afterhours .clock-dot { color: #d29922; }
+
+/* ---- market movers ------------------------------------------------------- */
+.movers-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden; }
+.movers-list li + li { border-top: 1px solid var(--border); }
+.movers-list button { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto 76px;
+  gap: 10px; align-items: center; width: 100%; padding: 9px 14px; background: var(--panel);
+  border: none; color: var(--text); cursor: pointer; text-align: left; font-size: 0.9rem; }
+.movers-list button:hover { background: var(--bg); }
+.mv-sym { font-weight: 700; }
+.mv-name { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mv-price { font-variant-numeric: tabular-nums; }
+.mv-chg { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.movers .tiny { margin-top: 6px; }
+
+/* ---- data keys (no-backend mode) ------------------------------------------ */
+.data-keys { max-width: 640px; margin: 16px auto 0; text-align: left; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; font-size: 0.9rem; }
+.data-keys p { margin: 0 0 8px; }
+.data-keys ol { margin: 0 0 12px; padding-left: 20px; }
+.data-keys a { color: var(--accent); }
+.data-keys .tiny { margin-top: 10px; }
+
+/* ---- paper trading ------------------------------------------------------- */
+.paper-table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 0.88rem; }
+.paper-table th { text-align: left; color: var(--muted); font-weight: 500; font-size: 0.78rem;
+  padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.paper-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); }
+.paper-table tr:hover td { background: var(--bg); }
+
+@media (max-width: 520px) {
+  .movers-list button { grid-template-columns: 58px minmax(0, 1fr) 70px; }
+  .mv-price { display: none; }
+  .view-tabs button { padding: 9px 10px; font-size: 0.88rem; }
+}

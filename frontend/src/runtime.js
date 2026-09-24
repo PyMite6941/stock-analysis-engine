@@ -73,3 +73,16 @@ export function platformLabel() {
     web: "Web", ssr: "Server",
   }[platform()] || "Web";
 }
+
+// Whether a backend answered at startup. null until App's health check runs.
+//
+// When the site is hosted as plain files (GitHub Pages, Netlify, any static
+// host) there is no /api at all. Rather than show a login screen for a server
+// that doesn't exist, the app switches to "direct mode" (see direct.js): the
+// browser fetches prices itself using the visitor's own free API keys.
+let backendUp = null;
+
+export function setBackendAvailable(up) { backendUp = up; }
+
+/** False only once we KNOW there is no backend; null (unknown) counts as up. */
+export function backendAvailable() { return backendUp !== false; }

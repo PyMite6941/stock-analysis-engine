@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { insights as fetchInsights } from "../api.js";
-import { num, pct } from "../format.js";
+import { num, pct, safeUrl } from "../format.js";
 
 const PERF_ORDER = ["1W", "1M", "3M", "6M", "YTD", "1Y"];
 const REC_PARTS = [
@@ -111,7 +111,9 @@ export default function InsightsPanel({ symbol }) {
           <ul className="news-list">
             {news.map((n, i) => (
               <li key={i}>
-                <a href={n.url} target="_blank" rel="noreferrer">{n.title}</a>
+                {safeUrl(n.url)
+                  ? <a href={safeUrl(n.url)} target="_blank" rel="noopener noreferrer">{n.title}</a>
+                  : <span>{n.title}</span>}
                 <span className="news-meta">{[n.publisher, n.date].filter(Boolean).join(" · ")}</span>
               </li>
             ))}

@@ -6,7 +6,7 @@ import InstallBar from "./components/InstallBar.jsx";
 import Tour from "./components/Tour.jsx";
 import { hasSeenTour } from "./tour.js";
 import { loadMode, saveMode } from "./modes.js";
-import { apiUrl } from "./runtime.js";
+import { apiUrl, setBackendAvailable } from "./runtime.js";
 
 const AUTH_KEY = "sae:api_key";
 
@@ -34,12 +34,18 @@ export default function App() {
           sessionStorage.removeItem(AUTH_KEY);
           setApiKey(null);
           setNeedsAuth(true);
-        } else {
-          if (apiKey) sessionStorage.setItem(AUTH_KEY, apiKey);
-          setNeedsAuth(false);
+          return;
         }
+        // A static host answers /api/health with a 404 or with index.html,
+        // neither of which is JSON. That means "no backend", not "log in".
+        const body = r.ok ? await r.json().catch(() => null) : null;
+        setBackendAvailable(Boolean(body));
+        if (body && apiKey) sessionStorage.setItem(AUTH_KEY, apiKey);
+        setNeedsAuth(false);
       } catch {
-        setNeedsAuth(true);
+        // Couldn't reach anything: run without a backend (direct mode).
+        setBackendAvailable(false);
+        setNeedsAuth(false);
       }
     }
     check();

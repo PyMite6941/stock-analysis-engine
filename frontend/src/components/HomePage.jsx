@@ -4,6 +4,11 @@ import { loadPositions } from "../positions.js";
 import { ago, clearRecents, loadRecents, recordSearch, removeRecent } from "../recents.js";
 import ModeSwitch from "./ModeSwitch.jsx";
 import SymbolSearch from "./SymbolSearch.jsx";
+import SessionChip from "./SessionChip.jsx";
+import MarketMovers from "./MarketMovers.jsx";
+import DataKeys from "./DataKeys.jsx";
+import { backendAvailable } from "../runtime.js";
+import { hasKeys } from "../direct.js";
 
 // Major indices shown under "Markets".
 const INDICES = [
@@ -47,6 +52,10 @@ export default function HomePage({ onSearch, theme, toggleTheme, mode, setMode,
   const [checking, setChecking] = useState(false);
   const [recents, setRecents] = useState(loadRecents);
   const [positions] = useState(loadPositions);
+  // No backend = the browser fetches prices itself with the visitor's keys.
+  const directMode = !backendAvailable();
+  const [keysOpen, setKeysOpen] = useState(() => directMode && !hasKeys());
+  const [reload, setReload] = useState(0);
 
   const watchSymbols = (localStorage.getItem(LS_SYMBOLS) || "AAPL, MSFT, NVDA")
     .split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
@@ -68,6 +77,7 @@ export default function HomePage({ onSearch, theme, toggleTheme, mode, setMode,
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      if (directMode && !hasKeys()) { setLoading(false); return; }
       setLoading(true);
       setError(null);
       try {
@@ -90,7 +100,7 @@ export default function HomePage({ onSearch, theme, toggleTheme, mode, setMode,
     }
     load();
     return () => { cancelled = true; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resolve the ticker BEFORE navigating, so a typo says "not found" here
   // instead of opening an analysis page that can't load anything.
@@ -176,6 +186,11 @@ export default function HomePage({ onSearch, theme, toggleTheme, mode, setMode,
         <div className="logo-mark" style={{ position: "relative" }}>
           📈
           <span className="home-corner">
+            {directMode && (
+              <button className="help-btn" onClick={() => setKeysOpen((v) => !v)}
+                      title="Your data keys" aria-label="Your data keys"
+                      aria-expanded={keysOpen}>🔑</button>
+            )}
             <button className="help-btn" onClick={onStartTour}
                     title="Show me around" aria-label="Show me around">?</button>
             <button className="theme-btn" onClick={toggleTheme}
@@ -198,6 +213,11 @@ export default function HomePage({ onSearch, theme, toggleTheme, mode, setMode,
               ? "Day-trader mode: intraday levels, position sizing and live P/L."
               : "Standard mode: the full research dashboard."}
         </p>
+        <SessionChip />
+
+        {keysOpen && (
+          <DataKeys onSaved={() => { setKeysOpen(false); setReload((n) => n + 1); }} />
+        )}
 
         <div className="search">
           <SymbolSearch
@@ -234,7 +254,13 @@ export default function HomePage({ onSearch, theme, toggleTheme, mode, setMode,
         </section>
       )}
 
-      {!loading && (
+      {!loading && directMode && !hasKeys() && (
+        <p className="muted" style={{ textAlign: "center", marginTop: 28 }}>
+          Add your keys above and the markets, movers and your watchlist appear here.
+        </p>
+      )}
+
+      {!loading && (!directMode || hasKeys()) && (
         <>
           <Section title="Markets" items={filteredIdx}
                    empty={`No markets match “${query}”.`}>
@@ -243,6 +269,10 @@ export default function HomePage({ onSearch, theme, toggleTheme, mode, setMode,
                     onClick={() => open(q.symbol)} />
             ))}
           </Section>
+
+          {!query && (!directMode || hasKeys()) && (
+            <MarketMovers onOpen={open} beginner={mode === "beginner"} />
+          )}
 
           {holdingSymbols.length > 0 && (
             <Section title="💼 Your investments" items={filteredHoldings}

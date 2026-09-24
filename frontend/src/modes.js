@@ -86,5 +86,9 @@ export const GLOSSARY = {
   "Support / resistance": "Prices where the stock has repeatedly stopped falling (support) or stopped rising (resistance). They're where other traders are watching, which is much of why they matter.",
   "Pivot points": "Levels calculated from yesterday's high, low and close. Widely watched intraday, which makes them partly self-fulfilling.",
   Drawdown: "How far the price has fallen from its most recent peak.",
+  "Stop-loss": "A price you decide in advance to sell at if the trade goes against you. It turns 'how wrong can this get?' into a number you picked while calm.",
+  "Reward : risk": "How much you stand to make at your target for every $1 you'd lose at your stop. At 2 : 1 you only need to be right about 1 time in 3 to come out ahead.",
+  "Paper trading": "Buying and selling with pretend money at real prices. All the practice, none of the cost — the standard way to learn before risking anything.",
+  "Market movers": "The stocks with the biggest % change today, up or down. A big move usually means news — earnings, a lawsuit, an analyst call.",
   Concentration: "How much of your money sits in one holding. A single position over about a third of your portfolio means your outcome is really just that one bet.",
 };

@@ -26,6 +26,15 @@ math is identical to the online backend math**. The AI lives only in `backend/`
 Copy `.env.example` → `.env` and fill in keys. Offline mode needs no keys when
 `DATA_PROVIDER=yfinance`.
 
+## Run it without a backend ("direct mode")
+
+The frontend also works as plain static files (GitHub Pages, Netlify, `vite
+preview`). When `/api/health` doesn't answer with JSON, the app fetches prices
+straight from Finnhub and Twelve Data using each visitor's **own** free API keys,
+saved only in their browser (🔑 on the home page). Charts, indicators, the
+summary, search, movers and live streaming work. Panels that need the Python
+server are hidden. See `HANDOFF.md` for how it works and what's left to port.
+
 ## Run it
 
 All Python commands run **from this project root** so `core` imports cleanly.

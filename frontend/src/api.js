@@ -1,7 +1,8 @@
 // Thin client for the FastAPI backend. All calls go through Vite's /api proxy.
 
 import { clearStale, markStale } from "./pwa.js";
-import { apiUrl } from "./runtime.js";
+import { apiUrl, backendAvailable } from "./runtime.js";
+import * as direct from "./direct.js";
 import { cachedQuotes, rememberQuotes } from "./quoteCache.js";
 
 const AUTH_KEY = "sae:api_key";
@@ -46,7 +47,19 @@ async function handle(r) {
   return r;
 }
 
+// Everything except quotes, charts and search is computed by the Python
+// backend. Without one, say so plainly instead of failing with a vague
+// network error.
+function requireBackend() {
+  if (!backendAvailable()) {
+    throw new ApiError(
+      "This feature needs the backend server, which this copy of the site doesn't have.",
+      { code: "needs_backend" });
+  }
+}
+
 async function post(path, body) {
+  requireBackend();
   const r = await fetch(apiUrl(path), {
     method: "POST",
     headers: headers({ "Content-Type": "application/json" }),
@@ -56,12 +69,14 @@ async function post(path, body) {
 }
 
 async function get(path) {
+  requireBackend();
   const r = await fetch(apiUrl(path), { headers: headers() });
   return (await handle(r)).json();
 }
 
 // POST that returns a file rather than JSON.
 async function postBlob(path, body) {
+  requireBackend();
   const r = await fetch(apiUrl(path), {
     method: "POST",
     headers: headers({ "Content-Type": "application/json" }),
@@ -70,14 +85,24 @@ async function postBlob(path, body) {
   return (await handle(r)).blob();
 }
 
-export function analyze(symbols, period = "6mo") {
+export async function analyze(symbols, period = "6mo") {
+  if (!backendAvailable()) {
+    try {
+      return await direct.analyze(symbols, period);
+    } catch (e) {
+      // Same error type the backend path throws, so the page reacts the same.
+      throw new ApiError(e.message, { code: e.code, symbol: symbols.join(", ") });
+    }
+  }
   return post("/api/analyze", { symbols, period });
 }
 
 export async function quotes(symbols) {
   const q = encodeURIComponent(symbols.join(","));
   try {
-    const res = await get(`/api/quotes?symbols=${q}`);
+    const res = backendAvailable()
+      ? await get(`/api/quotes?symbols=${q}`)
+      : await direct.quotes(symbols);
     // Every response teaches us about every symbol in it, so a later request
     // for a different combination can still be answered offline.
     rememberQuotes(res.quotes);
@@ -106,6 +131,7 @@ export async function fundamentals(symbol) {
 }
 
 export async function candles(symbol, period = "6mo", interval = "1d") {
+  if (!backendAvailable()) return direct.candles(symbol, period, interval);
   const q = new URLSearchParams({ symbol, period, interval });
   return get(`/api/candles?${q}`);
 }
@@ -156,6 +182,7 @@ export async function exportPositions(positions, format = "csv") {
 }
 
 export async function importPositions(file) {
+  requireBackend();
   const form = new FormData();
   form.append("file", file);
   const r = await fetch(apiUrl("/api/portfolio/import"), {
@@ -276,6 +303,7 @@ export function asset(symbol) {
 // caller must not save them without the user confirming, because OCR gets
 // decimal points wrong and a wrong cost basis looks exactly like a right one.
 export async function importPhoto(file, hint) {
+  requireBackend();
   const form = new FormData();
   form.append("file", file);
   if (hint) form.append("hint", hint);
@@ -288,6 +316,7 @@ export async function importPhoto(file, hint) {
 // Find a ticker from a company name — "nvidia" -> NVDA. Takes an AbortSignal
 // because this fires while the user types and stale replies must not land.
 export async function searchSymbols(q, limit = 8, signal) {
+  if (!backendAvailable()) return direct.search(q, limit, signal);
   const params = new URLSearchParams({ q, limit });
   const r = await fetch(apiUrl(`/api/search?${params}`), { headers: headers(), signal });
   return (await handle(r)).json();

@@ -35,6 +35,9 @@ import PriceClock from "./PriceClock.jsx";
 import RiskPanel from "./RiskPanel.jsx";
 import TaxPanel from "./TaxPanel.jsx";
 import EventsPanel from "./EventsPanel.jsx";
+import RiskCalculator from "./RiskCalculator.jsx";
+import PaperTradePanel from "./PaperTradePanel.jsx";
+import { backendAvailable } from "../runtime.js";
 
 // Window used for the analysis fetch and the AI context. The chart and the
 // gain/loss panel each carry their own timeframe picker, so a third selector
@@ -43,6 +46,20 @@ const DEFAULT_PERIOD = "6mo";
 const LS_SYMBOLS = "sae:symbols";
 const LS_FOCUSED = "sae:focused";
 const POLL_INTERVAL = 30000;
+const LS_TAB = "sae:tab";
+
+const VIEW_TABS = [
+  { id: "overview", icon: "📋", label: "Overview",
+    hint: "Your watchlist, key stats and the latest news." },
+  { id: "trade", icon: "⚡", label: "Trade",
+    hint: "How many shares to buy, practice trades, and intraday levels." },
+  { id: "portfolio", icon: "💼", label: "Portfolio",
+    hint: "What you own: gains, dividends, taxes and risk." },
+  { id: "research", icon: "🔬", label: "Research",
+    hint: "Forecasts, backtests, fund holdings and valuation." },
+];
+// Where each audience lands: day traders straight on the Trade tab.
+const TAB_FOR_MODE = { beginner: "overview", standard: "overview", daytrader: "trade" };
 
 // The full analysis page. `initialSymbols` (from a home-page search) seeds the
 // watchlist; otherwise it falls back to the saved/default list.
@@ -69,6 +86,25 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
 
   const cfg = getMode(mode);
   const beginner = mode === "beginner";
+  const server = backendAvailable();
+
+  // The open tab is remembered, but switching mode jumps to that mode's home.
+  const [tab, setTab] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LS_TAB);
+      if (VIEW_TABS.some((t) => t.id === saved)) return saved;
+    } catch { /* storage blocked */ }
+    return TAB_FOR_MODE[mode] || "overview";
+  });
+  const pickTab = (id) => {
+    setTab(id);
+    try { localStorage.setItem(LS_TAB, id); } catch { /* storage blocked */ }
+  };
+  const firstMode = useRef(true);
+  useEffect(() => {
+    if (firstMode.current) { firstMode.current = false; return; }
+    pickTab(TAB_FOR_MODE[mode] || "overview");
+  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const symbols = symbolsInput
     .split(",")
@@ -314,10 +350,6 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
                 <ChartSection symbol={focused} onSymbolChange={setFocused} symbols={symbols} />
               )}
 
-              {mode === "daytrader" && focused && (
-                <DayTradePanel symbol={focused} livePrice={livePrices[focused]?.price} />
-              )}
-
               {assetInfo && assetInfo.asset_class !== "equity" && (
                 <p className="asset-note">
                   <span className={`asset-badge ${assetInfo.asset_class}`}>
@@ -332,74 +364,130 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
                 </p>
               )}
 
-              <EventsPanel positions={positions} symbols={symbols}
-                           beginner={beginner} onSelect={focusSymbol} />
+              {/* Everything below the chart lives in tabs, like Yahoo's
+                  Summary / Statistics / Holders row: each thing has one
+                  obvious home, and panels in hidden tabs don't load at all. */}
+              <nav className="view-tabs" role="tablist" aria-label="Sections">
+                {VIEW_TABS.map((t) => (
+                  <button key={t.id} role="tab" aria-selected={tab === t.id}
+                          className={tab === t.id ? "on" : ""} onClick={() => pickTab(t.id)}>
+                    <span aria-hidden="true">{t.icon}</span> {t.label}
+                  </button>
+                ))}
+              </nav>
+              <p className="view-tab-hint">{VIEW_TABS.find((t) => t.id === tab).hint}</p>
 
-              <PositionsPanel
-                beginner={beginner}
-                livePrices={livePrices}
-                positions={positions}
-                setPositions={setPositions}
-                onSelect={focusSymbol}
-                onSold={handleSold}
-                focusedSymbol={focused}
-              />
-
-              <RealizedPanel
-                sales={sales}
-                setSales={setSales}
-                positions={positions}
-                beginner={beginner}
-                onSelect={focusSymbol}
-              />
-
-              <TaxPanel sales={sales} positions={positions}
-                        beginner={beginner} />
-
-              <IncomePanel positions={positions} beginner={beginner}
-                           onSelect={focusSymbol} />
-
-              <PortfolioForecastPanel positions={positions} beginner={beginner} />
-
-              <RiskPanel positions={positions} beginner={beginner}
-                         onSelect={focusSymbol} />
-
-              <CorrelationPanel positions={positions} beginner={beginner}
-                                onSelect={focusSymbol} />
-
-              <ComparePanel
-                positions={positions}
-                setPositions={setPositions}
-                beginner={beginner}
-                onSelect={focusSymbol}
-              />
-
-              {focused && <ForecastPanel symbol={focused} beginner={beginner} />}
-
-              {focused && !beginner && (
-                <BacktestPanel symbol={focused} beginner={beginner} />
+              {!server && (tab === "portfolio" || tab === "research") && (
+                <p className="direct-note">
+                  ℹ This copy of the site runs without a server, so the panels
+                  that need one ({tab === "portfolio"
+                    ? "gains, taxes, income, risk and correlation"
+                    : "forecasts, backtests, fund holdings and valuation"}) are hidden.
+                </p>
               )}
 
-              {focused && <HoldingsPanel symbol={focused} beginner={beginner}
-                                         onSelect={focusSymbol} />}
+              {tab === "overview" && (
+                <>
+                  <QuoteTable
+                    quotes={displayQuotes}
+                    analyses={data.analyses}
+                    focused={focused}
+                    onSelect={setFocused}
+                  />
+                  {server && focused && <FundamentalsPanel symbol={focused} />}
+                  {server && focused && <InsightsPanel symbol={focused} />}
+                </>
+              )}
 
-              {focused && <FundamentalsPanel symbol={focused} />}
-              {focused && !isHidden(mode, "statistics") && <StatisticsPanel symbol={focused} />}
-              {focused && <InsightsPanel symbol={focused} />}
+              {tab === "trade" && (
+                <>
+                  {server && mode === "daytrader" && focused && (
+                    <DayTradePanel symbol={focused} livePrice={livePrices[focused]?.price} />
+                  )}
+                  {/* The intraday panel carries its own sizer; don't show two. */}
+                  {!(server && mode === "daytrader") && (
+                    <RiskCalculator symbol={focused} beginner={beginner}
+                                    livePrice={livePrices[focused]?.price ?? focusedQuote?.price} />
+                  )}
+                  <PaperTradePanel symbol={focused} beginner={beginner}
+                                   price={livePrices[focused]?.price ?? focusedQuote?.price}
+                                   livePrices={livePrices} onSelect={focusSymbol} />
+                </>
+              )}
 
-              <QuoteTable
-                quotes={displayQuotes}
-                analyses={data.analyses}
-                focused={focused}
-                onSelect={setFocused}
-              />
+              {tab === "portfolio" && (
+                <>
+                  {server && <EventsPanel positions={positions} symbols={symbols}
+                                          beginner={beginner} onSelect={focusSymbol} />}
+
+                  <PositionsPanel
+                    beginner={beginner}
+                    livePrices={livePrices}
+                    positions={positions}
+                    setPositions={setPositions}
+                    onSelect={focusSymbol}
+                    onSold={handleSold}
+                    focusedSymbol={focused}
+                  />
+
+                  {server && (
+                    <>
+                      <RealizedPanel
+                        sales={sales}
+                        setSales={setSales}
+                        positions={positions}
+                        beginner={beginner}
+                        onSelect={focusSymbol}
+                      />
+
+                      <TaxPanel sales={sales} positions={positions}
+                                beginner={beginner} />
+
+                      <IncomePanel positions={positions} beginner={beginner}
+                                   onSelect={focusSymbol} />
+
+                      <PortfolioForecastPanel positions={positions} beginner={beginner} />
+
+                      <RiskPanel positions={positions} beginner={beginner}
+                                 onSelect={focusSymbol} />
+
+                      <CorrelationPanel positions={positions} beginner={beginner}
+                                        onSelect={focusSymbol} />
+
+                      <ComparePanel
+                        positions={positions}
+                        setPositions={setPositions}
+                        beginner={beginner}
+                        onSelect={focusSymbol}
+                      />
+                    </>
+                  )}
+                </>
+              )}
+
+              {tab === "research" && server && focused && (
+                <>
+                  <ForecastPanel symbol={focused} beginner={beginner} />
+                  {!beginner && <BacktestPanel symbol={focused} beginner={beginner} />}
+                  <HoldingsPanel symbol={focused} beginner={beginner}
+                                 onSelect={focusSymbol} />
+                  {!isHidden(mode, "statistics") && <StatisticsPanel symbol={focused} />}
+                </>
+              )}
             </div>
             <aside className="side-col">
               <AlertsPanel alerts={alerts} setAlerts={setAlerts}
                            fired={fired} setFired={setFired}
                            symbols={watched} focused={focused} />
-              <ChatPanel symbols={symbols} period={period} mode={mode}
-                         positions={positions} focused={focused} />
+              {server ? (
+                <ChatPanel symbols={symbols} period={period} mode={mode}
+                           positions={positions} focused={focused} />
+              ) : (
+                <p className="direct-note">
+                  🤖 The AI analyst needs a server to keep its key secret, so it's
+                  off in this copy of the site.
+                </p>
+              )}
             </aside>
           </div>
         </>

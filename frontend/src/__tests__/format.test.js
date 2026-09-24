@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { big, money, num, pct } from "../format.js";
+import { big, money, num, pct, safeUrl } from "../format.js";
 
 describe("num", () => {
   it("formats numbers with commas", () => {
@@ -81,5 +81,24 @@ describe("money", () => {
     expect(money(null)).toBe("—");
     expect(money(undefined)).toBe("—");
     expect(money(NaN)).toBe("—");
+  });
+});
+
+describe("safeUrl", () => {
+  it("keeps ordinary web links", () => {
+    expect(safeUrl("https://example.com/a?b=1")).toBe("https://example.com/a?b=1");
+    expect(safeUrl("http://example.com/")).toBe("http://example.com/");
+  });
+
+  it("blocks links that would run code", () => {
+    expect(safeUrl("javascript:alert(1)")).toBeNull();
+    expect(safeUrl(" JavaScript:alert(1)")).toBeNull();
+    expect(safeUrl("data:text/html,<script>alert(1)</script>")).toBeNull();
+  });
+
+  it("rejects junk", () => {
+    expect(safeUrl("")).toBeNull();
+    expect(safeUrl(null)).toBeNull();
+    expect(safeUrl("not a url")).toBeNull();
   });
 });

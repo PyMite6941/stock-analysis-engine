@@ -141,3 +141,37 @@ export function allContinuous(symbols) {
   const list = (symbols || []).filter(Boolean);
   return list.length > 0 && list.every(looksContinuous);
 }
+
+/**
+ * What happens next, and how long until it: "Opens in 2h 13m", "Closes in
+ * 45m". Day traders plan around the open and close; beginners often don't
+ * know the market has hours at all. Holidays aren't modelled (see top).
+ */
+export function nextSessionChange(now = new Date()) {
+  const { minutes, dayIndex } = newYorkTime(now);
+  const status = marketStatus(now);
+  const DAY = 24 * 60;
+  let until;
+  let next;
+
+  if (status.state === "open") {
+    until = CLOSE_MINUTES - minutes; next = "Closes";
+  } else if (status.state === "premarket") {
+    until = OPEN_MINUTES - minutes; next = "Opens";
+  } else {
+    // Closed or after hours: find the next weekday's 09:30.
+    let daysAhead = minutes >= OPEN_MINUTES ? 1 : 0;
+    let d = (dayIndex + daysAhead) % 7;
+    while (d === 0 || d === 6) { daysAhead += 1; d = (d + 1) % 7; }
+    until = daysAhead * DAY + OPEN_MINUTES - minutes;
+    next = "Opens";
+  }
+  return { ...status, next, until, text: `${next} in ${duration(until)}` };
+}
+
+/** 135 -> "2h 15m", 2900 -> "2d 0h". */
+export function duration(mins) {
+  if (mins >= 24 * 60) return `${Math.floor(mins / 1440)}d ${Math.floor((mins % 1440) / 60)}h`;
+  if (mins >= 60) return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  return `${mins}m`;
+}

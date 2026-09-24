@@ -33,3 +33,16 @@ export function pct(n, d = 2) {
   if (n === null || n === undefined) return "—";
   return `${num(n, d)}%`;
 }
+
+// Links that come from outside (news feeds, data providers) are untrusted.
+// React 18 still renders `href="javascript:..."`, which runs code on click, so
+// only plain web links get through. Anything else becomes null — no link.
+export function safeUrl(url) {
+  if (typeof url !== "string") return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" || u.protocol === "http:" ? u.href : null;
+  } catch {
+    return null;
+  }
+}
