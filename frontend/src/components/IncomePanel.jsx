@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { portfolioIncome } from "../api.js";
-import { num, pct } from "../format.js";
+import { money, num, pct } from "../format.js";
 import Explain from "./Explain.jsx";
 
 // Dividend income from what you actually hold.
@@ -64,13 +64,13 @@ export default function IncomePanel({ positions, beginner = false, onSelect }) {
       <div className="portfolio-summary">
         <div className="pf-card big up">
           <span className="k">Income per year</span>
-          <span className="v">${num(s.annual_income)}</span>
-          <span className="sub">${num(s.monthly_income)}/month</span>
+          <span className="v">{money(s.annual_income)}</span>
+          <span className="sub">{money(s.monthly_income)}/month</span>
         </div>
         <div className="pf-card">
           <span className="k">Yield on cost</span>
           <span className="v">{pct(s.yield_on_cost_pct)}</span>
-          <span className="sub">on ${num(s.total_cost)} invested</span>
+          <span className="sub">on {money(s.total_cost)} invested</span>
         </div>
         <div className="pf-card">
           <span className="k">Current yield</span>
@@ -118,9 +118,9 @@ export default function IncomePanel({ positions, beginner = false, onSelect }) {
                   </button>
                 </td>
                 <td>{num(r.shares, 4)}</td>
-                <td>${num(r.rate)}</td>
-                <td className="strong up">${num(r.annual_income)}</td>
-                <td>${num(r.quarterly_income)}</td>
+                <td>{money(r.rate)}</td>
+                <td className="strong up">{money(r.annual_income)}</td>
+                <td>{money(r.quarterly_income)}</td>
                 <td className="strong">{pct(r.yield_on_cost_pct)}</td>
                 <td className="muted">{pct(r.current_yield_pct)}</td>
                 <td className={r.stretched ? "warn" : ""}>
@@ -152,7 +152,7 @@ export default function IncomePanel({ positions, beginner = false, onSelect }) {
                 <span className="muted">
                   {u.days_away != null ? `in ${u.days_away}d` : ""}
                 </span>
-                <span className="up">≈ ${num(u.estimated_payment)}</span>
+                <span className="up">≈ {money(u.estimated_payment)}</span>
                 {u.estimated && (
                   <span className="muted tiny" title={`Last ex-date was ${u.last_ex_date}`}>
                     projected

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { statistics as fetchStats } from "../api.js";
-import { num, big, pct } from "../format.js";
+import { big, money, num, pct } from "../format.js";
 
 function StatGrid({ rows }) {
   return (
@@ -23,8 +23,8 @@ function TargetBar({ a }) {
   return (
     <div className="target-wrap">
       <div className="target-bar">
-        {cur != null && <span className="target-mark cur" style={{ left: pos(cur) }} title={`Current ${num(cur)}`} />}
-        {avg != null && <span className="target-mark avg" style={{ left: pos(avg) }} title={`Avg ${num(avg)}`} />}
+        {cur != null && <span className="target-mark cur" style={{ left: pos(cur) }} title={`Current ${money(cur)}`} />}
+        {avg != null && <span className="target-mark avg" style={{ left: pos(avg) }} title={`Avg ${money(avg)}`} />}
       </div>
       <div className="target-ends">
         <span>Low {num(lo)}</span>

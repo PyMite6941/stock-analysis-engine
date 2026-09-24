@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { exportRealized, realizedGains, saveBlob } from "../api.js";
-import { num, pct } from "../format.js";
+import { money, num, pct } from "../format.js";
 import { removeSale, salesToCsv } from "../sales.js";
 import Explain from "./Explain.jsx";
 
@@ -90,24 +90,24 @@ export default function RealizedPanel({ sales, setSales, positions,
           <div className={`pf-card big ${s.total_pnl >= 0 ? "up" : "down"}`}>
             <span className="k">Realised {year ? `in ${year}` : "total"}</span>
             <span className="v">
-              {s.total_pnl >= 0 ? "+" : "−"}${num(Math.abs(s.total_pnl))}
+              {money(s.total_pnl, { sign: true })}
             </span>
             <span className="sub">
-              on ${num(s.total_cost)} ({s.total_pnl_pct >= 0 ? "+" : ""}
+              on {money(s.total_cost)} ({s.total_pnl_pct >= 0 ? "+" : ""}
               {pct(s.total_pnl_pct)})
             </span>
           </div>
           <div className="pf-card">
             <span className="k">Short-term</span>
             <span className={`v ${s.short_term_pnl >= 0 ? "up" : "down"}`}>
-              {s.short_term_pnl >= 0 ? "+" : "−"}${num(Math.abs(s.short_term_pnl))}
+              {money(s.short_term_pnl, { sign: true })}
             </span>
             <span className="sub">{s.n_short_term} trades, under 1 year</span>
           </div>
           <div className="pf-card">
             <span className="k">Long-term</span>
             <span className={`v ${s.long_term_pnl >= 0 ? "up" : "down"}`}>
-              {s.long_term_pnl >= 0 ? "+" : "−"}${num(Math.abs(s.long_term_pnl))}
+              {money(s.long_term_pnl, { sign: true })}
             </span>
             <span className="sub">{s.n_long_term} trades, over 1 year</span>
           </div>
@@ -120,7 +120,7 @@ export default function RealizedPanel({ sales, setSales, positions,
             <div className="pf-card">
               <span className="k">Day trades</span>
               <span className={`v ${s.intraday_pnl >= 0 ? "up" : "down"}`}>
-                {s.intraday_pnl >= 0 ? "+" : "−"}${num(Math.abs(s.intraday_pnl))}
+                {money(s.intraday_pnl, { sign: true })}
               </span>
               <span className="sub">{s.n_intraday} same-day round trips</span>
             </div>
@@ -155,10 +155,10 @@ export default function RealizedPanel({ sales, setSales, positions,
                 <td>
                   <span className={`term-tag ${r.term}`}>{r.term}</span>
                 </td>
-                <td>${num(r.cost_basis)}</td>
-                <td>${num(r.exit_price)}</td>
+                <td>{money(r.cost_basis)}</td>
+                <td>{money(r.exit_price)}</td>
                 <td className={`strong ${r.pnl >= 0 ? "up" : "down"}`}>
-                  {r.pnl >= 0 ? "+" : "−"}${num(Math.abs(r.pnl))}
+                  {money(r.pnl, { sign: true })}
                 </td>
                 <td className={r.pnl_pct >= 0 ? "up" : "down"}>
                   {r.pnl_pct == null ? "—"
@@ -189,13 +189,13 @@ export default function RealizedPanel({ sales, setSales, positions,
                     <td className="strong">{y.year}</td>
                     <td>{y.n_sales}</td>
                     <td className={y.short_term_pnl >= 0 ? "up" : "down"}>
-                      ${num(y.short_term_pnl)}
+                      {money(y.short_term_pnl)}
                     </td>
                     <td className={y.long_term_pnl >= 0 ? "up" : "down"}>
-                      ${num(y.long_term_pnl)}
+                      {money(y.long_term_pnl)}
                     </td>
                     <td className={`strong ${y.total_pnl >= 0 ? "up" : "down"}`}>
-                      ${num(y.total_pnl)}
+                      {money(y.total_pnl)}
                     </td>
                     <td>{pct(y.win_rate_pct, 0)}</td>
                   </tr>

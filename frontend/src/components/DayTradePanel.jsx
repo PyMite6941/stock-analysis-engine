@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { daytrade as fetchDaytrade } from "../api.js";
-import { big, num, pct } from "../format.js";
+import { big, money, num, pct } from "../format.js";
 
 const REFRESH_MS = 60000;
 
@@ -126,7 +126,7 @@ export default function DayTradePanel({ symbol, livePrice }) {
       <div className="dt-strip">
         <div className="dt-stat">
           <span className="k">Last</span>
-          <span className="v">${num(price)}</span>
+          <span className="v">{money(price)}</span>
           {s.change_pct != null && (
             <span className={`sub ${s.change_pct >= 0 ? "up" : "down"}`}>
               {s.change_pct >= 0 ? "+" : ""}{pct(s.change_pct)} today
@@ -135,7 +135,7 @@ export default function DayTradePanel({ symbol, livePrice }) {
         </div>
         <div className="dt-stat">
           <span className="k">VWAP</span>
-          <span className="v">{data.vwap ? `$${num(data.vwap)}` : "—"}</span>
+          <span className="v">{data.vwap ? `${money(data.vwap)}` : "—"}</span>
           {/* No volume (so no VWAP) is normal outside the session — don't
               render a bogus "above by 0%". */}
           <span className={`sub ${data.vs_vwap_pct >= 0 ? "up" : "down"}`}>
@@ -149,13 +149,13 @@ export default function DayTradePanel({ symbol, livePrice }) {
             {data.continuous ? "Today's range (UTC)"
               : premarket ? "Last session range" : "Session range"}
           </span>
-          <span className="v">${num(s.low)}–${num(s.high)}</span>
+          <span className="v">{money(s.low)}–{money(s.high)}</span>
           <span className="sub">{pct(s.range_pct)} wide</span>
         </div>
         <div className={`dt-stat ${extended ? "warn" : ""}`}>
           <span className="k">Range used</span>
           <span className="v">{pct(s.range_used_pct, 0)}</span>
-          <span className="sub">of {`$${num(s.atr)}`} ATR</span>
+          <span className="sub">of {`${money(s.atr)}`} ATR</span>
         </div>
         {s.gap_pct != null && (
           <div className="dt-stat">
@@ -183,12 +183,12 @@ export default function DayTradePanel({ symbol, livePrice }) {
 
       {s.position_in_range_pct != null && (
         <div className="range-meter">
-          <span className="rm-label">Low ${num(s.low)}</span>
+          <span className="rm-label">Low {money(s.low)}</span>
           <span className="rm-track">
             <span className="rm-fill" style={{ width: `${s.position_in_range_pct}%` }} />
             <span className="rm-marker" style={{ left: `${s.position_in_range_pct}%` }} />
           </span>
-          <span className="rm-label">${num(s.high)} High</span>
+          <span className="rm-label">{money(s.high)} High</span>
         </div>
       )}
 
@@ -196,7 +196,7 @@ export default function DayTradePanel({ symbol, livePrice }) {
         <div className="forecast-card">
           <h3>Floor pivots</h3>
           <p className="muted small">
-            From yesterday's ${num(p.prev_low)}–${num(p.prev_high)} range.
+            From yesterday's {money(p.prev_low)}–{money(p.prev_high)} range.
           </p>
           <ul className="levels pivot-levels">
             {pivotRows.map(([label, v]) => {
@@ -206,7 +206,7 @@ export default function DayTradePanel({ symbol, livePrice }) {
                 <li key={label}
                     className={`level ${label === "Pivot" ? "now" : label[0] === "R" ? "res" : "sup"}${near ? " near" : ""}`}>
                   <span className="level-tag">{label}</span>
-                  <span className="level-price">${num(v)}</span>
+                  <span className="level-price">{money(v)}</span>
                   <span className={`level-dist ${dist >= 0 ? "up" : "down"}`}>
                     {dist == null ? "" : `${dist >= 0 ? "+" : ""}${pct(dist)}`}
                   </span>
@@ -221,9 +221,9 @@ export default function DayTradePanel({ symbol, livePrice }) {
           {or.high ? (
             <>
               <dl className="mini-stats">
-                <div><dt>ORH</dt><dd>${num(or.high)}</dd></div>
-                <div><dt>ORL</dt><dd>${num(or.low)}</dd></div>
-                <div><dt>Width</dt><dd>${num(or.range)}</dd></div>
+                <div><dt>ORH</dt><dd>{money(or.high)}</dd></div>
+                <div><dt>ORL</dt><dd>{money(or.low)}</dd></div>
+                <div><dt>Width</dt><dd>{money(or.range)}</dd></div>
                 <div><dt>Now</dt>
                   <dd className={price > or.high ? "up" : price < or.low ? "down" : ""}>
                     {price > or.high ? "broken up"
@@ -238,10 +238,10 @@ export default function DayTradePanel({ symbol, livePrice }) {
             <>
               <h3 className="sub-head">ATR stop distances</h3>
               <dl className="mini-stats">
-                <div><dt>Long 1×</dt><dd>${num(data.stops.long.tight_1x)}</dd></div>
-                <div><dt>Long 1.5×</dt><dd>${num(data.stops.long.normal_1_5x)}</dd></div>
-                <div><dt>Short 1×</dt><dd>${num(data.stops.short.tight_1x)}</dd></div>
-                <div><dt>Short 1.5×</dt><dd>${num(data.stops.short.normal_1_5x)}</dd></div>
+                <div><dt>Long 1×</dt><dd>{money(data.stops.long.tight_1x)}</dd></div>
+                <div><dt>Long 1.5×</dt><dd>{money(data.stops.long.normal_1_5x)}</dd></div>
+                <div><dt>Short 1×</dt><dd>{money(data.stops.short.tight_1x)}</dd></div>
+                <div><dt>Short 1.5×</dt><dd>{money(data.stops.short.normal_1_5x)}</dd></div>
               </dl>
             </>
           )}
@@ -273,9 +273,9 @@ export default function DayTradePanel({ symbol, livePrice }) {
             <div className="sizer-result">
               <div className="sizer-shares">{num(sizing.shares, 0)}<em>shares</em></div>
               <dl className="mini-stats">
-                <div><dt>Risking</dt><dd>${num(sizing.riskDollars)}</dd></div>
-                <div><dt>Per share</dt><dd>${num(sizing.perShare)}</dd></div>
-                <div><dt>Position</dt><dd>${num(sizing.value)}</dd></div>
+                <div><dt>Risking</dt><dd>{money(sizing.riskDollars)}</dd></div>
+                <div><dt>Per share</dt><dd>{money(sizing.perShare)}</dd></div>
+                <div><dt>Position</dt><dd>{money(sizing.value)}</dd></div>
                 <div><dt>Of account</dt>
                   <dd className={sizing.value / acct > 1 ? "warn" : ""}>
                     {pct((sizing.value / acct) * 100, 0)}</dd></div>

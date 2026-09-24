@@ -1,4 +1,4 @@
-import { big, num, pct } from "../format.js";
+import { big, money, num, pct } from "../format.js";
 import Explain from "./Explain.jsx";
 
 // "What this actually means" — the dashboard in plain English.
@@ -33,7 +33,7 @@ export default function BeginnerBrief({ quote, analysis, fund }) {
 
       <p className="brief-lead">
         <strong>{quote.name}</strong> ({quote.symbol}) trades at{" "}
-        <strong>${num(quote.price)}</strong>, {up ? "up" : "down"}{" "}
+        <strong>{money(quote.price)}</strong>, {up ? "up" : "down"}{" "}
         <strong className={up ? "up" : "down"}>{pct(Math.abs(quote.change_pct))}</strong>{" "}
         today.
         {quote.market_cap ? (

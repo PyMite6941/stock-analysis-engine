@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { portfolioForecast } from "../api.js";
-import { num, pct } from "../format.js";
+import { money, num, pct } from "../format.js";
 import Explain from "./Explain.jsx";
 
 // Probability cone for the whole book rather than one symbol.
@@ -61,7 +61,7 @@ export default function PortfolioForecastPanel({ positions, beginner = false }) 
       )}
 
       <p className="pf-current">
-        Today: <strong>${num(current)}</strong> across {data.n_symbols} holdings,
+        Today: <strong>{money(current)}</strong> across {data.n_symbols} holdings,
         modelled on {data.n_days} trading days of combined history.
       </p>
 

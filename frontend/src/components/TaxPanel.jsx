@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { exportTax, taxReport } from "../api.js";
-import { num } from "../format.js";
+import { money, num } from "../format.js";
 
 // Form 8949 and Schedule D, the way the IRS wants them.
 //
@@ -18,12 +18,6 @@ const BASIS_OPTIONS = [
   { value: "false", label: "1099-B received, basis not reported" },
   { value: "null", label: "No 1099-B (often crypto)" },
 ];
-
-function money(v) {
-  if (v == null || v === "") return "—";
-  const n = Number(v);
-  return `${n < 0 ? "−" : ""}$${num(Math.abs(n))}`;
-}
 
 export default function TaxPanel({ sales, positions, beginner = false }) {
   const [year, setYear] = useState(() => new Date().getFullYear());
@@ -45,6 +39,9 @@ export default function TaxPanel({ sales, positions, beginner = false }) {
 
   const years = data?.years_available || [];
   const rows = data?.form_8949 || [];
+  // 8949 rows carry "" (not null) for a blank adjustment, which money() would
+  // otherwise render as $0.00.
+  const cell = (v) => (v === "" || v == null ? "—" : money(v));
   const d = data?.schedule_d;
 
   // Group by box, because that is how the form is laid out — each box is a
@@ -202,7 +199,7 @@ export default function TaxPanel({ sales, positions, beginner = false }) {
                           </span>
                         : "—"}
                     </td>
-                    <td>{r.adjustment === "" ? "—" : money(r.adjustment)}</td>
+                    <td>{cell(r.adjustment)}</td>
                     <td className={`strong ${r.gain_loss >= 0 ? "up" : "down"}`}>
                       {money(r.gain_loss)}
                     </td>

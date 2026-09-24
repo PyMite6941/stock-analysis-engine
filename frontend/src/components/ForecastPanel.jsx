@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { forecast as fetchForecast } from "../api.js";
-import { num, pct } from "../format.js";
+import { money, num, pct } from "../format.js";
 import Explain from "./Explain.jsx";
 
 // Projections, probability cone, signal score, risk stats and S/R levels.
@@ -127,11 +127,11 @@ export default function ForecastPanel({ symbol, beginner = false, period = "1y" 
                 {bandRows.map(([label, b]) => (
                   <tr key={label}>
                     <td className="strong">{label}</td>
-                    <td className="down">${num(b.p5)}</td>
-                    <td>${num(b.p25)}</td>
-                    <td className="strong">${num(b.p50)}</td>
-                    <td>${num(b.p75)}</td>
-                    <td className="up">${num(b.p95)}</td>
+                    <td className="down">{money(b.p5)}</td>
+                    <td>{money(b.p25)}</td>
+                    <td className="strong">{money(b.p50)}</td>
+                    <td>{money(b.p75)}</td>
+                    <td className="up">{money(b.p95)}</td>
                     <td>{pct(b.prob_gain_pct, 1)}</td>
                     <td>±{pct(b.expected_move_pct)}</td>
                   </tr>
@@ -169,7 +169,7 @@ export default function ForecastPanel({ symbol, beginner = false, period = "1y" 
         {targetResult && !targetResult.error && (
           <p className="target-result">
             <strong>{pct(targetResult.probability_pct, 1)}</strong> chance {symbol} trades
-            at ${num(targetResult.target)} ({targetResult.distance_pct > 0 ? "+" : ""}
+            at {money(targetResult.target)} ({targetResult.distance_pct > 0 ? "+" : ""}
             {pct(targetResult.distance_pct)}) at some point in the next{" "}
             {targetResult.days} trading days.
           </p>
@@ -191,7 +191,7 @@ export default function ForecastPanel({ symbol, beginner = false, period = "1y" 
             </p>
             <dl className="mini-stats">
               {Object.entries(trend.projections).map(([k, v]) => (
-                <div key={k}><dt>{k}</dt><dd>${num(v)}</dd></div>
+                <div key={k}><dt>{k}</dt><dd>{money(v)}</dd></div>
               ))}
             </dl>
             <p className="fine-print">
@@ -239,21 +239,21 @@ export default function ForecastPanel({ symbol, beginner = false, period = "1y" 
               {[...(levels.resistance || [])].reverse().map((l) => (
                 <li key={`r${l.price}`} className="level res">
                   <span className="level-tag">R</span>
-                  <span className="level-price">${num(l.price)}</span>
+                  <span className="level-price">{money(l.price)}</span>
                   <span className="level-dist up">+{pct(l.distance_pct)}</span>
                   <span className="level-touch">{l.touches}×</span>
                 </li>
               ))}
               <li className="level now">
                 <span className="level-tag">→</span>
-                <span className="level-price">${num(levels.current)}</span>
+                <span className="level-price">{money(levels.current)}</span>
                 <span className="level-dist">now</span>
                 <span className="level-touch" />
               </li>
               {(levels.support || []).map((l) => (
                 <li key={`s${l.price}`} className="level sup">
                   <span className="level-tag">S</span>
-                  <span className="level-price">${num(l.price)}</span>
+                  <span className="level-price">{money(l.price)}</span>
                   <span className="level-dist down">{pct(l.distance_pct)}</span>
                   <span className="level-touch">{l.touches}×</span>
                 </li>

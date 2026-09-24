@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { comparePositions, exportComparison, importPositions } from "../api.js";
-import { num, pct } from "../format.js";
+import { money, num, pct } from "../format.js";
 import { csvToPositions, mergePositions } from "../positions.js";
 import Explain from "./Explain.jsx";
 
@@ -121,17 +121,17 @@ export default function ComparePanel({ positions, setPositions, beginner = false
           <div className="portfolio-summary">
             <div className="pf-card">
               <span className="k">Worth {periodLabel} ago</span>
-              <span className="v">${num(s.start_value)}</span>
+              <span className="v">{money(s.start_value)}</span>
               <span className="sub">at today's share counts</span>
             </div>
             <div className="pf-card">
               <span className="k">Worth now</span>
-              <span className="v">${num(s.end_value)}</span>
+              <span className="v">{money(s.end_value)}</span>
             </div>
             <div className={`pf-card big ${s.period_change >= 0 ? "up" : "down"}`}>
               <span className="k">Change over {periodLabel}</span>
               <span className="v">
-                {s.period_change >= 0 ? "+" : "−"}${num(Math.abs(s.period_change))}
+                {money(s.period_change, { sign: true })}
               </span>
               <span className="sub">
                 {s.period_change_pct >= 0 ? "+" : ""}{pct(s.period_change_pct)}
@@ -184,20 +184,20 @@ export default function ComparePanel({ positions, setPositions, beginner = false
                       )}
                     </td>
                     <td>{num(r.shares, 4)}</td>
-                    <td>{r.period_start_price ? `$${num(r.period_start_price)}` : "—"}</td>
-                    <td>{r.price ? `$${num(r.price)}` : "—"}</td>
+                    <td>{r.period_start_price ? `${money(r.period_start_price)}` : "—"}</td>
+                    <td>{r.price ? `${money(r.price)}` : "—"}</td>
                     <td className={`strong ${r.period_change_pct >= 0 ? "up" : "down"}`}>
                       {r.period_change_pct == null ? "—"
                         : `${r.period_change_pct >= 0 ? "+" : ""}${pct(r.period_change_pct)}`}
                     </td>
                     <td className={r.period_change >= 0 ? "up" : "down"}>
                       {r.period_change == null ? "—"
-                        : `${r.period_change >= 0 ? "+" : "−"}$${num(Math.abs(r.period_change))}`}
+                        : money(r.period_change, { sign: true })}
                     </td>
-                    <td>${num(r.avg_cost)}</td>
+                    <td>{money(r.avg_cost)}</td>
                     <td className={`strong ${r.pnl >= 0 ? "up" : "down"}`}>
                       {r.pnl == null ? "—"
-                        : `${r.pnl >= 0 ? "+" : "−"}$${num(Math.abs(r.pnl))}`}
+                        : money(r.pnl, { sign: true })}
                     </td>
                     <td className={r.pnl_pct >= 0 ? "up" : "down"}>
                       {r.pnl_pct == null ? "—"
@@ -221,10 +221,10 @@ export default function ComparePanel({ positions, setPositions, beginner = false
 
           {s.total_cost > 0 && (
             <p className="fine-print">
-              Since you bought: ${num(s.total_cost)} invested is now worth{" "}
-              ${num(s.total_value)} —{" "}
+              Since you bought: {money(s.total_cost)} invested is now worth{" "}
+              {money(s.total_value)} —{" "}
               <strong className={s.total_pnl >= 0 ? "up" : "down"}>
-                {s.total_pnl >= 0 ? "+" : "−"}${num(Math.abs(s.total_pnl))}{" "}
+                {money(s.total_pnl, { sign: true })}{" "}
                 ({s.total_pnl_pct >= 0 ? "+" : ""}{pct(s.total_pnl_pct)})
               </strong>. That's a different number from the period change above,
               and it's the one that's actually yours.

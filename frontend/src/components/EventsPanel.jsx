@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { portfolioEvents } from "../api.js";
-import { num } from "../format.js";
+import { money, num } from "../format.js";
 
 // What is scheduled ahead for what you hold.
 //
@@ -86,7 +86,7 @@ export default function EventsPanel({ positions, symbols = [],
               </button>
               <span className="ev-label">{e.label}</span>
               {e.kind === "ex_dividend" && e.amount != null && (
-                <span className="muted">${num(e.amount)}/share per year</span>
+                <span className="muted">{money(e.amount)}/share per year</span>
               )}
               <span className="ev-date muted">{e.date}</span>
             </li>

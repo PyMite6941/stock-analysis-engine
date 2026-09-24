@@ -1,10 +1,6 @@
 import { useState, useEffect } from "react";
 import { fundamentals as fetchFundamentals } from "../api.js";
-
-function num(n, digits = 2) {
-  if (n === null || n === undefined) return "—";
-  return Number(n).toLocaleString(undefined, { maximumFractionDigits: digits });
-}
+import { money, num } from "../format.js";
 
 function bigNum(n) {
   if (!n) return "—";
@@ -44,8 +40,8 @@ export default function FundamentalsPanel({ symbol }) {
   if (!data) return null;
 
   const f = data;
-  const range = (lo, hi) => (lo != null && hi != null) ? `${num(lo)} – ${num(hi)}` : "—";
-  const bidAsk = (p, s) => (p != null) ? `${num(p)}${s != null ? ` x ${s}` : ""}` : "—";
+  const range = (lo, hi) => (lo != null && hi != null) ? `${money(lo)} – ${money(hi)}` : "—";
+  const bidAsk = (p, s) => (p != null) ? `${money(p)}${s != null ? ` x ${s}` : ""}` : "—";
   const dividend = (f.forward_dividend != null || f.dividend_yield_pct != null)
     ? `${f.forward_dividend != null ? num(f.forward_dividend) : "--"}` +
       `${f.dividend_yield_pct != null ? ` (${num(f.dividend_yield_pct)}%)` : ""}`
