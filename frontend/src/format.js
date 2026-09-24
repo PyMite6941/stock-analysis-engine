@@ -5,6 +5,20 @@ export function num(n, d = 2) {
   return Number(n).toLocaleString(undefined, { maximumFractionDigits: d });
 }
 
+// Money always shows both decimal places. `num` sets only a MAXIMUM, so a
+// value like 2255.1 renders as "$2,255.1", which reads as a typo rather than
+// as $2,255.10. Share counts still use `num`, where a trailing "10.0000" would
+// be the wrong kind of precise.
+export function money(n, { sign = false } = {}) {
+  if (n === null || n === undefined || Number.isNaN(Number(n))) return "—";
+  const v = Number(n);
+  const body = Math.abs(v).toLocaleString(undefined, {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  });
+  const lead = v < 0 ? "−" : sign ? "+" : "";
+  return `${lead}$${body}`;
+}
+
 export function big(n) {
   if (n === null || n === undefined) return "—";
   const a = Math.abs(n);

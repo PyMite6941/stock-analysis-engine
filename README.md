@@ -255,6 +255,35 @@ and deliberately separates two numbers people conflate:
 These regularly disagree in sign. A lot opened partway through the window is
 measured from its purchase date and flagged, not credited with the whole move.
 
+## Adding a position
+
+Three required fields — stock, shares, price — and nothing else on screen until
+you ask for it. Date, notes and exit plan sit behind one toggle, because a form
+that asks seven questions to record one purchase is why people give up and use a
+spreadsheet instead.
+
+Four things remove work from the common path:
+
+- **The ticker field autocompletes on company name**, the same as the main
+  search. Typing `nvidia` offers NVDA.
+- **`＋ Add NVDA`** in the panel head prefills whichever stock is on screen,
+  which is almost always the one being added. A programmatic prefill
+  deliberately does *not* open the autocomplete — the dropdown would cover the
+  fields below it and swallow the next click.
+- **The live price is offered, not assumed.** One click fills the cost field,
+  labelled "only right if you bought today", because the price now and the
+  price you paid are the same number on exactly one day.
+- **Per-share or total-spent**, as a visible segmented control rather than a
+  dropdown. Brokers show both, and which one you remember depends on how you
+  bought — "$5,000 of NVDA" is how fractional-share investing works. Either way
+  the preview shows the number you did *not* type, which is the one worth
+  checking.
+
+The empty state offers all three ways in — type one, import a CSV/XLSX, or
+photograph a broker statement. The import button used to appear only once the
+list was non-empty, which was exactly backwards for the person who had a
+brokerage export sitting in Downloads.
+
 ## Buying and selling
 
 A position records a ticker, share count, price paid and — optionally — **when**,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { num, big, pct } from "../format.js";
+import { big, money, num, pct } from "../format.js";
 
 describe("num", () => {
   it("formats numbers with commas", () => {
@@ -52,5 +52,34 @@ describe("pct", () => {
 
   it("returns em dash for null", () => {
     expect(pct(null)).toBe("—");
+  });
+});
+
+describe("money", () => {
+  it("always shows both decimal places", () => {
+    // `num` sets only a maximum, so 2255.1 came out as "2,255.1" — which reads
+    // as a typo when it is meant to be a dollar amount.
+    expect(money(2255.1)).toBe("$2,255.10");
+    expect(money(500)).toBe("$500.00");
+  });
+
+  it("puts the minus before the dollar sign", () => {
+    expect(money(-42.5)).toBe("−$42.50");
+  });
+
+  it("adds a plus only when asked", () => {
+    expect(money(42.5)).toBe("$42.50");
+    expect(money(42.5, { sign: true })).toBe("+$42.50");
+    expect(money(-42.5, { sign: true })).toBe("−$42.50");
+  });
+
+  it("does not sign zero as positive when asked for a sign", () => {
+    expect(money(0, { sign: true })).toBe("+$0.00");
+  });
+
+  it("handles nothing gracefully", () => {
+    expect(money(null)).toBe("—");
+    expect(money(undefined)).toBe("—");
+    expect(money(NaN)).toBe("—");
   });
 });

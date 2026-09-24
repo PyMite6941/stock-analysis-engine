@@ -13,6 +13,10 @@ import { searchSymbols } from "../api.js";
 // order, briefly showing results for a prefix the user has already moved past.
 export default function SymbolSearch({
   value, onChange, onSubmit, placeholder, disabled, autoFocus, className,
+  // Bump this when the parent sets `value` itself rather than the user typing
+  // it. A programmatic prefill is already the answer, so searching for it pops
+  // a dropdown over whatever sits below — which then swallows the next click.
+  skipToken = 0,
 }) {
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
@@ -21,6 +25,16 @@ export default function SymbolSearch({
   const wrapRef = useRef(null);
   const abortRef = useRef(null);
   const skipRef = useRef(false);     // set after picking, so we don't re-search
+
+  // Runs before the search effect below on the same render, so the skip is
+  // already armed by the time the new value is seen.
+  useEffect(() => {
+    if (skipToken) {
+      skipRef.current = true;
+      setOpen(false);
+      setResults([]);
+    }
+  }, [skipToken]);
 
   useEffect(() => {
     if (skipRef.current) { skipRef.current = false; return undefined; }

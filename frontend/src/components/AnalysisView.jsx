@@ -342,6 +342,7 @@ export default function AnalysisView({ initialSymbols, onHome, theme, toggleThem
                 setPositions={setPositions}
                 onSelect={focusSymbol}
                 onSold={handleSold}
+                focusedSymbol={focused}
               />
 
               <RealizedPanel
